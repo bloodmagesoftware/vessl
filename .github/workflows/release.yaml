@@ -28,7 +28,7 @@ jobs:
             odin-target: linux_arm64
             archive-ext: tar.gz
             platform: linux
-          - os: blacksmith-2vcpu-windows-2025
+          - os: windows-latest
             target: windows-amd64
             odin-target: windows_amd64
             archive-ext: zip
@@ -49,25 +49,18 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Linux dependencies
+      - name: Install SDL (Linux)
         if: matrix.platform == 'linux'
+        uses: libsdl-org/setup-sdl@main
+        with:
+          install-linux-dependencies: true
+          version: 3-latest
+          version-sdl-ttf: 3-latest
+
+      - name: Install SDL (macOS)
+        if: matrix.platform == 'macos'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev cmake ninja-build libfreetype-dev
-
-          # Build and install SDL3 from source
-          git clone --depth 1 https://github.com/libsdl-org/SDL.git SDL3
-          cmake -S SDL3 -B SDL3/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build SDL3/build
-          sudo cmake --install SDL3/build
-
-          # Build and install SDL3_ttf from source
-          git clone --depth 1 https://github.com/libsdl-org/SDL_ttf.git SDL3_ttf
-          cmake -S SDL3_ttf -B SDL3_ttf/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build SDL3_ttf/build
-          sudo cmake --install SDL3_ttf/build
-
-          sudo ldconfig
+          brew install sdl3 sdl3_ttf
 
       - name: Determine binary name
         id: binary
