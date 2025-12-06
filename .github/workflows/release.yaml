@@ -1,0 +1,304 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  APP_NAME: ${{ github.event.repository.name }}
+  HOMEBREW_TAP: tsukinoko-kun/homebrew-tap
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-amd64
+            odin-target: linux_amd64
+            archive-ext: tar.gz
+            platform: linux
+          - os: blacksmith-2vcpu-ubuntu-2404-arm
+            target: linux-arm64
+            odin-target: linux_arm64
+            archive-ext: tar.gz
+            platform: linux
+          - os: blacksmith-2vcpu-windows-2025
+            target: windows-amd64
+            odin-target: windows_amd64
+            archive-ext: zip
+            platform: windows
+          - os: blacksmith-2vcpu-windows-2025
+            target: windows-arm64
+            odin-target: windows_arm64
+            archive-ext: zip
+            platform: windows
+          - os: macos-latest
+            target: macos-arm64
+            odin-target: darwin_arm64
+            archive-ext: tar.gz
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.target }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev
+
+      - name: Determine binary name
+        id: binary
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            echo "name=${{ env.APP_NAME }}.exe" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ env.APP_NAME }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (UNIX)
+        if: matrix.platform != 'windows'
+        run: odin build src -out:${{ steps.binary.outputs.name }} -target:${{ matrix.odin-target }} -o:speed
+
+      - name: Build (Windows)
+        if: matrix.platform == 'windows'
+        run: odin build src -out:${{ steps.binary.outputs.name }} -target:${{ matrix.odin-target }} -o:speed -subsystem:windows
+
+      - name: Install macOS build dependencies
+        if: matrix.platform == 'macos'
+        run: |
+          brew install librsvg
+
+      - name: Create macOS app bundle
+        if: matrix.platform == 'macos'
+        run: |
+          # Create iconset directory
+          mkdir -p ${{ env.APP_NAME }}.iconset
+
+          # Generate PNG icons at required sizes from SVG
+          for size in 16 32 128 256 512 1024; do
+            rsvg-convert -w $size -h $size icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
+          done
+
+          # Create @2x versions by renaming/copying
+          cp ${{ env.APP_NAME }}.iconset/icon_32x32.png ${{ env.APP_NAME }}.iconset/icon_16x16@2x.png
+          cp ${{ env.APP_NAME }}.iconset/icon_64x64.png ${{ env.APP_NAME }}.iconset/icon_32x32@2x.png 2>/dev/null || rsvg-convert -w 64 -h 64 icon.svg -o ${{ env.APP_NAME }}.iconset/icon_32x32@2x.png
+          cp ${{ env.APP_NAME }}.iconset/icon_256x256.png ${{ env.APP_NAME }}.iconset/icon_128x128@2x.png
+          cp ${{ env.APP_NAME }}.iconset/icon_512x512.png ${{ env.APP_NAME }}.iconset/icon_256x256@2x.png
+          cp ${{ env.APP_NAME }}.iconset/icon_1024x1024.png ${{ env.APP_NAME }}.iconset/icon_512x512@2x.png
+
+          # Remove the 1024x1024 (not needed as a base, only as @2x of 512)
+          rm ${{ env.APP_NAME }}.iconset/icon_1024x1024.png
+
+          # Generate .icns file
+          iconutil -c icns ${{ env.APP_NAME }}.iconset -o AppIcon.icns
+
+          # Create app bundle structure
+          mkdir -p ${{ env.APP_NAME }}.app/Contents/MacOS
+          mkdir -p ${{ env.APP_NAME }}.app/Contents/Resources
+
+          # Copy files into bundle
+          cp ${{ steps.binary.outputs.name }} ${{ env.APP_NAME }}.app/Contents/MacOS/
+          cp assets/macos/Info.plist ${{ env.APP_NAME }}.app/Contents/
+          cp AppIcon.icns ${{ env.APP_NAME }}.app/Contents/Resources/
+          cp -r assets ${{ env.APP_NAME }}.app/Contents/Resources/
+
+          # Clean up temporary files
+          rm -rf ${{ env.APP_NAME }}.iconset AppIcon.icns
+
+      - name: Prepare distribution folder (non-macOS)
+        if: matrix.platform != 'macos'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp ${{ steps.binary.outputs.name }} dist/
+          cp -r assets dist/
+
+      - name: Create archive (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          # App bundle archive
+          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }} ${{ env.APP_NAME }}.app
+          # CLI binary archive for Homebrew Formula
+          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}-cli.${{ matrix.archive-ext }} ${{ steps.binary.outputs.name }} assets
+
+      - name: Create archive (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: dist
+        run: |
+          tar -czvf ../${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }} .
+
+      - name: Create archive (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }}
+          retention-days: 1
+
+      - name: Upload CLI artifact (macOS)
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-cli
+          path: ${{ env.APP_NAME }}-${{ matrix.target }}-cli.${{ matrix.archive-ext }}
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Create Release
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
+
+      - name: Generate checksums
+        working-directory: release
+        run: |
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    name: Update Homebrew Tap
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Calculate SHA256 checksums
+        id: sha
+        run: |
+          echo "macos_arm64=$(sha256sum artifacts/macos-arm64/${{ env.APP_NAME }}-macos-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "macos_arm64_cli=$(sha256sum artifacts/macos-arm64-cli/${{ env.APP_NAME }}-macos-arm64-cli.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(sha256sum artifacts/linux-amd64/${{ env.APP_NAME }}-linux-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(sha256sum artifacts/linux-arm64/${{ env.APP_NAME }}-linux-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version
+        id: version
+        run: |
+          # Remove 'v' prefix from tag
+          echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Cask
+        env:
+          VERSION: ${{ steps.version.outputs.number }}
+          SHA_MACOS: ${{ steps.sha.outputs.macos_arm64 }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p Casks
+          cat > Casks/${APP_NAME}.rb << CASK_EOF
+          cask "${APP_NAME}" do
+            version "${VERSION}"
+            on_arm do
+              sha256 "${SHA_MACOS}"
+              url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64.tar.gz"
+            end
+            name "${APP_NAME}"
+            desc "High-performance extensible IDE"
+            homepage "https://github.com/${REPO}"
+            app "${APP_NAME}.app"
+          end
+          CASK_EOF
+
+      - name: Generate Formula
+        env:
+          VERSION: ${{ steps.version.outputs.number }}
+          SHA_MACOS_CLI: ${{ steps.sha.outputs.macos_arm64_cli }}
+          SHA_LINUX_AMD64: ${{ steps.sha.outputs.linux_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Capitalize first letter for Ruby class name
+          CLASS_NAME="$(echo "${APP_NAME}" | sed 's/./\U&/')"
+          cat > ${APP_NAME}.rb << FORMULA_EOF
+          class ${CLASS_NAME} < Formula
+            desc "High-performance extensible IDE"
+            homepage "https://github.com/${REPO}"
+            version "${VERSION}"
+            license "MIT"
+            on_macos do
+              on_arm do
+                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64-cli.tar.gz"
+                sha256 "${SHA_MACOS_CLI}"
+              end
+            end
+            on_linux do
+              on_intel do
+                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+            end
+            def install
+              bin.install "${APP_NAME}"
+              (share/"${APP_NAME}").install "assets"
+            end
+            test do
+              assert_predicate bin/"${APP_NAME}", :executable?
+            end
+          end
+          FORMULA_EOF
+
+      - name: Push to Homebrew Tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${{ env.HOMEBREW_TAP }}.git" tap
+          mkdir -p tap/Casks
+          cp Casks/${{ env.APP_NAME }}.rb tap/Casks/
+          cp ${{ env.APP_NAME }}.rb tap/
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/${{ env.APP_NAME }}.rb ${{ env.APP_NAME }}.rb
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update ${{ env.APP_NAME }} to ${{ github.ref_name }}"
+            git push
+          fi
