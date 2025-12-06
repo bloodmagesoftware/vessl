@@ -185,8 +185,9 @@ PluginContext :: struct {
     plugin_id: string,
     user_data: rawptr,
     allocator: mem.Allocator,
-    ui_api: rawptr,        // ^UIPluginAPI (cast when needed)
-    plugin_registry: rawptr, // ^PluginRegistry (cast when needed)
+    ui_api: rawptr,            // ^UIPluginAPI (cast when needed)
+    plugin_registry: rawptr,   // ^PluginRegistry (cast when needed)
+    shortcut_registry: rawptr, // ^ShortcutRegistry (cast when needed)
     ctx: rawptr,
 }
 ```
@@ -196,6 +197,7 @@ PluginContext :: struct {
 - **`ui_api`**: Cast to `^UIPluginAPI` to manipulate the UI
 - **`eventbus`**: Emit and receive events
 - **`plugin_registry`**: Access other plugins (advanced usage)
+- **`shortcut_registry`**: Cast to `^ShortcutRegistry` to register keyboard shortcuts
 
 ## Common Tasks
 
@@ -510,7 +512,278 @@ Utility plugins may not have UI but provide services through events (e.g., a git
 - **`Buffer_Open`**: Emitted when a file should be opened
 - **`Buffer_Save`**: Emitted when a buffer should be saved
 - **`Cursor_Move`**: Emitted when the cursor moves in an editor
-- **`Custom_Signal`**: For custom plugin-to-plugin communication
+- **`Custom_Signal`**: For custom plugin-to-plugin communication (including keyboard shortcuts)
+
+## Keyboard Shortcuts
+
+Plugins can register keyboard shortcuts that trigger named events. This enables a powerful decoupled design: one plugin registers a shortcut, and any plugin (including a different one) can handle the resulting event.
+
+### How Keyboard Shortcuts Work
+
+```mermaid
+sequenceDiagram
+    participant Plugin A as Plugin A<br/>(Registers Shortcut)
+    participant Registry as Shortcut Registry
+    participant Main as Main Event Loop
+    participant EventBus as Event Bus
+    participant Plugin B as Plugin B<br/>(Handles Event)
+    
+    Note over Plugin A,Registry: During Plugin Init
+    Plugin A->>Registry: register_shortcut(Ctrl+O, "open_file")
+    
+    Note over Main,EventBus: User presses Ctrl+O
+    Main->>Registry: find_shortcut(key='o', modifiers={Ctrl})
+    Registry-->>Main: "open_file"
+    Main->>EventBus: emit Custom_Signal<br/>{name: "open_file"}
+    EventBus->>Plugin B: on_event(Custom_Signal)
+    Plugin B->>Plugin B: Handle "open_file" event
+    Plugin B-->>EventBus: return true (consumed)
+```
+
+### Registering Shortcuts
+
+Register shortcuts during your plugin's `init` procedure using the `shortcut_registry` from the plugin context:
+
+```odin
+my_plugin_init :: proc(ctx: ^core.PluginContext) -> bool {
+    // ... other initialization ...
+
+    // Register keyboard shortcuts
+    if ctx.shortcut_registry != nil {
+        shortcut_registry := cast(^core.ShortcutRegistry)ctx.shortcut_registry
+        
+        // Define the key (SDL keycode - use lowercase letter)
+        KEY_S :: 's'
+        
+        // Register Ctrl+S for save
+        core.register_shortcut(
+            shortcut_registry,
+            KEY_S,                    // Key
+            {.Ctrl},                  // Modifiers
+            "save_buffer",            // Event name to trigger
+            ctx.plugin_id,            // Your plugin ID (for debugging)
+        )
+        
+        // Register Ctrl+Shift+S for save all
+        core.register_shortcut(
+            shortcut_registry,
+            KEY_S,
+            {.Ctrl, .Shift},
+            "save_all_buffers",
+            ctx.plugin_id,
+        )
+    }
+    
+    return true
+}
+```
+
+### Available Modifiers
+
+The `KeyModifier` type is a bit set with **platform-specific** modifier names to avoid confusion:
+
+```odin
+KeyModifierFlag :: enum {
+    // Windows/Linux modifiers
+    Ctrl,     // Control key (primary modifier on Windows/Linux)
+    Alt,      // Alt key
+    Meta,     // Windows key (rarely used in shortcuts)
+    
+    // macOS modifiers
+    Cmd,      // Command key ⌘ (primary modifier on macOS)
+    Opt,      // Option key ⌥ (equivalent to Alt)
+    CtrlMac,  // Control key on Mac ⌃ (rarely used, distinct from Cmd)
+    
+    // Shared
+    Shift,    // Shift key (all platforms)
+}
+```
+
+**Why platform-specific names?**
+
+The same physical key has different meanings on different platforms:
+- The **GUI key** (Windows key / Command key) is `Meta` on Windows/Linux but `Cmd` on macOS
+- The **Control key** is `Ctrl` on Windows/Linux but `CtrlMac` on macOS
+- The **Alt key** is `Alt` on Windows/Linux but `Opt` on macOS
+
+This naming makes it crystal clear which key you're referring to on each platform.
+
+### Platform Considerations
+
+To support all platforms, register shortcuts with the appropriate platform-specific modifiers:
+
+```odin
+KEY_O :: 'o'
+KEY_S :: 's'
+
+// "Open File" shortcut
+core.register_shortcut(shortcut_registry, KEY_O, {.Ctrl}, "open_file", ctx.plugin_id)  // Windows/Linux: Ctrl+O
+core.register_shortcut(shortcut_registry, KEY_O, {.Cmd}, "open_file", ctx.plugin_id)   // macOS: Cmd+O
+
+// "Save" shortcut with Shift
+core.register_shortcut(shortcut_registry, KEY_S, {.Ctrl, .Shift}, "save_all", ctx.plugin_id)  // Windows/Linux: Ctrl+Shift+S
+core.register_shortcut(shortcut_registry, KEY_S, {.Cmd, .Shift}, "save_all", ctx.plugin_id)   // macOS: Cmd+Shift+S
+```
+
+The main event loop automatically maps SDL keyboard events to the correct platform-specific modifiers:
+
+| SDL Modifier | Windows/Linux | macOS |
+|--------------|---------------|-------|
+| CTRL         | `.Ctrl`       | `.CtrlMac` |
+| ALT          | `.Alt`        | `.Opt` |
+| GUI (Win/Cmd)| `.Meta`       | `.Cmd` |
+| SHIFT        | `.Shift`      | `.Shift` |
+
+### Handling Shortcut Events
+
+When a shortcut is triggered, it emits a `Custom_Signal` event with the event name in the payload. Handle it in your `on_event` procedure:
+
+```odin
+my_plugin_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool {
+    #partial switch event.type {
+    case .Custom_Signal:
+        #partial switch payload in event.payload {
+        case core.EventPayload_Custom:
+            // Check if this is an event we handle
+            if payload.name == "save_buffer" {
+                // Handle save
+                save_current_buffer()
+                return true // Consume the event
+            }
+            if payload.name == "open_file" {
+                // Handle open file dialog
+                show_file_picker()
+                return true
+            }
+        }
+    }
+    return false
+}
+```
+
+### Cross-Plugin Shortcuts
+
+The shortcut system is designed for cross-plugin communication. Plugin A can register a shortcut that triggers an event handled by Plugin B:
+
+```odin
+// In plugin_a (e.g., vscode_default layout plugin):
+core.register_shortcut(shortcut_registry, 'n', {.Ctrl}, "new_buffer", ctx.plugin_id)
+
+// In plugin_b (e.g., buffer/editor plugin):
+// Handles the "new_buffer" event in on_event
+if payload.name == "new_buffer" {
+    create_new_buffer()
+    return true
+}
+```
+
+### API Reference
+
+#### Types
+
+```odin
+// Platform-specific modifier flags
+KeyModifierFlag :: enum {
+    // Windows/Linux
+    Ctrl,     // Control key
+    Alt,      // Alt key
+    Meta,     // Windows key
+    
+    // macOS
+    Cmd,      // Command key ⌘
+    Opt,      // Option key ⌥
+    CtrlMac,  // Control key ⌃
+    
+    // Shared
+    Shift,    // Shift key
+}
+
+// Bit set for combining modifiers
+KeyModifier :: bit_set[KeyModifierFlag]
+
+// A registered shortcut
+KeyboardShortcut :: struct {
+    key:        i32,         // SDL keycode
+    modifiers:  KeyModifier, // Required modifiers
+    event_name: string,      // Event to trigger
+    plugin_id:  string,      // Plugin that registered it
+}
+```
+
+#### Functions
+
+```odin
+// Create a new shortcut registry
+init_shortcut_registry :: proc(allocator := context.allocator) -> ^ShortcutRegistry
+
+// Destroy and free all resources
+destroy_shortcut_registry :: proc(registry: ^ShortcutRegistry)
+
+// Register a keyboard shortcut
+// Returns false if the shortcut is already registered
+register_shortcut :: proc(
+    registry: ^ShortcutRegistry,
+    key: i32,              // SDL keycode (e.g., 'o' for O key)
+    modifiers: KeyModifier,
+    event_name: string,
+    plugin_id: string,
+) -> bool
+
+// Remove all shortcuts registered by a plugin
+unregister_shortcuts :: proc(registry: ^ShortcutRegistry, plugin_id: string)
+
+// Find a shortcut by key combination
+// Returns (event_name, found)
+find_shortcut :: proc(
+    registry: ^ShortcutRegistry,
+    key: i32,
+    modifiers: KeyModifier,
+) -> (string, bool)
+```
+
+### Best Practices
+
+1. **Use Descriptive Event Names**: Choose clear, action-oriented names like `"save_buffer"`, `"toggle_sidebar"`, `"open_file_picker"`.
+
+2. **Namespace Your Events**: For plugin-specific events, prefix with your plugin name: `"filetree:refresh"`, `"git:commit"`.
+
+3. **Register Platform-Specific Shortcuts**: Always register both `Ctrl` (Windows/Linux) and `Cmd` (macOS) variants:
+   ```odin
+   core.register_shortcut(registry, 's', {.Ctrl}, "save", id)  // Windows/Linux
+   core.register_shortcut(registry, 's', {.Cmd}, "save", id)   // macOS
+   ```
+
+4. **Document Your Shortcuts**: Maintain a list of shortcuts your plugin registers for user reference.
+
+5. **Avoid Conflicts**: Check the console for warnings about duplicate shortcut registrations.
+
+6. **Don't Consume Unless Handling**: Return `true` from `on_event` only if you actually handled the shortcut event.
+
+7. **Use Correct Platform Modifiers**: Don't mix platform modifiers (e.g., don't use `{.Ctrl, .Cmd}` together—they're for different platforms).
+
+### Common Keycodes
+
+Use lowercase letters for letter keys:
+
+```odin
+KEY_A :: 'a'
+KEY_B :: 'b'
+// ... etc
+KEY_Z :: 'z'
+
+KEY_0 :: '0'
+KEY_1 :: '1'
+// ... etc
+KEY_9 :: '9'
+```
+
+For special keys, use SDL keycodes (from `vendor:sdl3`):
+- `sdl.K_RETURN` - Enter/Return
+- `sdl.K_ESCAPE` - Escape
+- `sdl.K_TAB` - Tab
+- `sdl.K_BACKSPACE` - Backspace
+- `sdl.K_DELETE` - Delete
+- `sdl.K_F1` through `sdl.K_F12` - Function keys
 
 ## Example: Complete Plugin
 

@@ -191,3 +191,217 @@ emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
 	handled := emit_event(bus, event)
 	return event, handled
 }
+
+// =============================================================================
+// Keyboard Shortcut Registry
+// =============================================================================
+
+// Keyboard modifier flags - Platform-specific for clarity
+// 
+// Windows/Linux modifiers:
+//   - Ctrl:  Control key (primary modifier for shortcuts like Ctrl+S)
+//   - Alt:   Alt key
+//   - Meta:  Windows key (rarely used in shortcuts)
+//   - Shift: Shift key (shared across platforms)
+//
+// macOS modifiers:
+//   - Cmd:     Command key (primary modifier for shortcuts like Cmd+S)
+//   - Opt:     Option key (equivalent to Alt on other platforms)
+//   - CtrlMac: Control key on Mac (rarely used, distinct from Cmd)
+//   - Shift:   Shift key (shared across platforms)
+//
+// Plugin authors should register shortcuts for both platforms:
+//   register_shortcut(registry, 'o', {.Ctrl}, "open_file", id)  // Windows/Linux
+//   register_shortcut(registry, 'o', {.Cmd}, "open_file", id)   // macOS
+//
+KeyModifierFlag :: enum {
+	// Windows/Linux modifiers
+	Ctrl,  // Control key on Windows/Linux
+	Alt,   // Alt key on Windows/Linux
+	Meta,  // Windows key on Windows/Linux
+
+	// macOS modifiers
+	Cmd,     // Command key on macOS (⌘)
+	Opt,     // Option key on macOS (⌥)
+	CtrlMac, // Control key on macOS (⌃)
+
+	// Shared
+	Shift, // Shift key (all platforms)
+}
+
+// Bit set of modifier flags for combining modifiers
+KeyModifier :: bit_set[KeyModifierFlag]
+
+// A registered keyboard shortcut
+KeyboardShortcut :: struct {
+	key:        i32, // SDL keycode (e.g., sdl.K_O for 'O')
+	modifiers:  KeyModifier, // Required modifier keys
+	event_name: string, // Event to trigger when shortcut is pressed
+	plugin_id:  string, // Plugin that registered this shortcut (for debugging/conflicts)
+}
+
+// Registry for keyboard shortcuts
+ShortcutRegistry :: struct {
+	shortcuts: [dynamic]KeyboardShortcut,
+	mutex:     sync.Mutex,
+	allocator: mem.Allocator,
+}
+
+// Initialize a new shortcut registry
+init_shortcut_registry :: proc(allocator := context.allocator) -> ^ShortcutRegistry {
+	registry := new(ShortcutRegistry, allocator)
+	registry.shortcuts = {}
+	registry.mutex = {}
+	registry.allocator = allocator
+	return registry
+}
+
+// Destroy the shortcut registry and free all resources
+destroy_shortcut_registry :: proc(registry: ^ShortcutRegistry) {
+	if registry == nil do return
+
+	sync.mutex_lock(&registry.mutex)
+	defer sync.mutex_unlock(&registry.mutex)
+
+	// Free all cloned strings
+	for shortcut in registry.shortcuts {
+		delete(shortcut.event_name)
+		delete(shortcut.plugin_id)
+	}
+
+	delete(registry.shortcuts)
+	free(registry)
+}
+
+// Register a keyboard shortcut
+// Parameters:
+//   - registry: The shortcut registry
+//   - key: SDL keycode (e.g., sdl.K_O for the 'O' key)
+//   - modifiers: Modifier keys required (e.g., {.Ctrl} or {.Meta})
+//   - event_name: Name of the event to emit when shortcut is triggered
+//   - plugin_id: ID of the plugin registering the shortcut
+// Returns: true if registration succeeded, false if shortcut already exists
+register_shortcut :: proc(
+	registry: ^ShortcutRegistry,
+	key: i32,
+	modifiers: KeyModifier,
+	event_name: string,
+	plugin_id: string,
+) -> bool {
+	if registry == nil do return false
+
+	sync.mutex_lock(&registry.mutex)
+	defer sync.mutex_unlock(&registry.mutex)
+
+	// Check for existing shortcut with same key combination
+	for shortcut in registry.shortcuts {
+		if shortcut.key == key && shortcut.modifiers == modifiers {
+			fmt.eprintf(
+				"[ShortcutRegistry] Warning: Shortcut already registered by '%s' for event '%s'\n",
+				shortcut.plugin_id,
+				shortcut.event_name,
+			)
+			return false
+		}
+	}
+
+	// Clone strings for persistence
+	shortcut := KeyboardShortcut {
+		key        = key,
+		modifiers  = modifiers,
+		event_name = strings.clone(event_name, registry.allocator),
+		plugin_id  = strings.clone(plugin_id, registry.allocator),
+	}
+
+	append(&registry.shortcuts, shortcut)
+	fmt.printf(
+		"[ShortcutRegistry] Registered shortcut: %s -> '%s' (by %s)\n",
+		format_shortcut(key, modifiers),
+		event_name,
+		plugin_id,
+	)
+
+	return true
+}
+
+// Unregister all shortcuts for a specific plugin
+unregister_shortcuts :: proc(registry: ^ShortcutRegistry, plugin_id: string) {
+	if registry == nil do return
+
+	sync.mutex_lock(&registry.mutex)
+	defer sync.mutex_unlock(&registry.mutex)
+
+	// Remove shortcuts in reverse order to avoid index issues
+	for i := len(registry.shortcuts) - 1; i >= 0; i -= 1 {
+		if registry.shortcuts[i].plugin_id == plugin_id {
+			// Free cloned strings
+			delete(registry.shortcuts[i].event_name)
+			delete(registry.shortcuts[i].plugin_id)
+			ordered_remove(&registry.shortcuts, i)
+		}
+	}
+}
+
+// Find a shortcut matching the given key and modifiers
+// Returns: (event_name, found) - event_name is the event to trigger, found indicates if a match was found
+find_shortcut :: proc(
+	registry: ^ShortcutRegistry,
+	key: i32,
+	modifiers: KeyModifier,
+) -> (string, bool) {
+	if registry == nil do return "", false
+
+	sync.mutex_lock(&registry.mutex)
+	defer sync.mutex_unlock(&registry.mutex)
+
+	for shortcut in registry.shortcuts {
+		if shortcut.key == key && shortcut.modifiers == modifiers {
+			return shortcut.event_name, true
+		}
+	}
+
+	return "", false
+}
+
+// Helper to format a shortcut for display (e.g., "Ctrl+O", "Cmd+Shift+S")
+format_shortcut :: proc(key: i32, modifiers: KeyModifier) -> string {
+	builder := strings.builder_make()
+
+	// Windows/Linux modifiers
+	if .Ctrl in modifiers {
+		strings.write_string(&builder, "Ctrl+")
+	}
+	if .Alt in modifiers {
+		strings.write_string(&builder, "Alt+")
+	}
+	if .Meta in modifiers {
+		strings.write_string(&builder, "Meta+")
+	}
+
+	// macOS modifiers
+	if .Cmd in modifiers {
+		strings.write_string(&builder, "Cmd+")
+	}
+	if .Opt in modifiers {
+		strings.write_string(&builder, "Opt+")
+	}
+	if .CtrlMac in modifiers {
+		strings.write_string(&builder, "CtrlMac+")
+	}
+
+	// Shared
+	if .Shift in modifiers {
+		strings.write_string(&builder, "Shift+")
+	}
+
+	// Convert keycode to character (simple version for printable chars)
+	if key >= 'A' && key <= 'Z' {
+		strings.write_byte(&builder, u8(key))
+	} else if key >= 'a' && key <= 'z' {
+		strings.write_byte(&builder, u8(key - 32)) // Convert to uppercase
+	} else {
+		strings.write_string(&builder, fmt.tprintf("0x%X", key))
+	}
+
+	return strings.to_string(builder)
+}

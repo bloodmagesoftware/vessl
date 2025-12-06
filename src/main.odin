@@ -53,6 +53,14 @@ main :: proc() {
 	}
 	defer core.destroy_plugin_registry(plugin_registry)
 
+	// Initialize Shortcut Registry
+	shortcut_registry := core.init_shortcut_registry()
+	if shortcut_registry == nil {
+		fmt.eprintln("Failed to initialize Shortcut Registry")
+		return
+	}
+	defer core.destroy_shortcut_registry(shortcut_registry)
+
 	// Initialize window
 	window_ctx, ok := win.init_window("Vessl IDE", 1280, 720)
 	if !ok {
@@ -90,12 +98,13 @@ main :: proc() {
 		return
 	}
 
-	// Cast ui_api_ptr to rawptr to pass to init_plugin
+	// Cast ui_api_ptr and shortcut_registry to rawptr to pass to init_plugin
 	if !core.init_plugin(
 		plugin_registry,
 		"builtin:vscode_default",
 		eventbus,
 		cast(rawptr)ui_api_ptr,
+		cast(rawptr)shortcut_registry,
 	) {
 		fmt.eprintln("Failed to initialize vscode_default plugin")
 		return
@@ -114,7 +123,7 @@ main :: proc() {
 	}
 
 	// Initialize filetree plugin
-	if !core.init_plugin(plugin_registry, "builtin:filetree", eventbus, cast(rawptr)ui_api_ptr) {
+	if !core.init_plugin(plugin_registry, "builtin:filetree", eventbus, cast(rawptr)ui_api_ptr, cast(rawptr)shortcut_registry) {
 		fmt.eprintln("Failed to initialize filetree plugin")
 		return
 	}
@@ -242,8 +251,71 @@ main :: proc() {
 				needs_render = true
 				sync.mutex_unlock(&render_required_mutex)
 
-			case .TEXT_INPUT, .KEY_DOWN:
+			case .TEXT_INPUT:
 				// Immediate feedback for text input
+				sync.mutex_lock(&render_required_mutex)
+				render_required = true
+				needs_render = true
+				sync.mutex_unlock(&render_required_mutex)
+
+			case .KEY_DOWN:
+				// Check for keyboard shortcuts
+				key := event.key.key
+				mod_state := event.key.mod
+
+				// Convert SDL modifiers to our platform-specific KeyModifier type
+				// SDL3 uses LCTRL/RCTRL for left/right control, LGUI/RGUI for Cmd/Win key, etc.
+				modifiers: core.KeyModifier = {}
+
+				// Shift is shared across all platforms
+				if .LSHIFT in mod_state || .RSHIFT in mod_state {
+					modifiers += {.Shift}
+				}
+
+				// Platform-specific modifier mapping
+				when ODIN_OS == .Darwin {
+					// macOS: GUI key is Command, Alt is Option, Ctrl is CtrlMac
+					if .LGUI in mod_state || .RGUI in mod_state {
+						modifiers += {.Cmd}
+					}
+					if .LALT in mod_state || .RALT in mod_state {
+						modifiers += {.Opt}
+					}
+					if .LCTRL in mod_state || .RCTRL in mod_state {
+						modifiers += {.CtrlMac}
+					}
+				} else {
+					// Windows/Linux: Ctrl is Ctrl, Alt is Alt, GUI is Meta (Windows key)
+					if .LCTRL in mod_state || .RCTRL in mod_state {
+						modifiers += {.Ctrl}
+					}
+					if .LALT in mod_state || .RALT in mod_state {
+						modifiers += {.Alt}
+					}
+					if .LGUI in mod_state || .RGUI in mod_state {
+						modifiers += {.Meta}
+					}
+				}
+
+				// Look up if there's a shortcut registered for this key combination
+				event_name, found := core.find_shortcut(shortcut_registry, i32(key), modifiers)
+				if found {
+					// Emit custom signal event with the shortcut's event name
+					shortcut_payload := core.EventPayload_Custom {
+						name = event_name,
+						data = nil,
+					}
+					shortcut_event, _ := core.emit_event_typed(
+						eventbus,
+						.Custom_Signal,
+						shortcut_payload,
+					)
+					if shortcut_event != nil {
+						core.dispatch_event_to_plugins(plugin_registry, shortcut_event)
+					}
+				}
+
+				// Request immediate render for text input feedback
 				sync.mutex_lock(&render_required_mutex)
 				render_required = true
 				needs_render = true

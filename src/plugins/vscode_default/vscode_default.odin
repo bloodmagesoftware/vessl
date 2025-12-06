@@ -80,6 +80,33 @@ vscode_default_init :: proc(ctx: ^core.PluginContext) -> bool {
 		ui_api.set_root_node_api(ui_api_ptr, root)
 	}
 
+	// Register keyboard shortcuts
+	if ctx.shortcut_registry != nil {
+		shortcut_registry := cast(^core.ShortcutRegistry)ctx.shortcut_registry
+
+		// Register platform-specific shortcuts for selecting working directory
+		// On macOS, users expect Cmd+O, on Windows/Linux users expect Ctrl+O
+		KEY_O :: 'o' // SDL keycode for 'O' key
+
+		// Register Ctrl+O for Windows/Linux
+		core.register_shortcut(
+			shortcut_registry,
+			KEY_O,
+			{.Ctrl},
+			"select_working_directory",
+			ctx.plugin_id,
+		)
+
+		// Register Cmd+O for macOS
+		core.register_shortcut(
+			shortcut_registry,
+			KEY_O,
+			{.Cmd},
+			"select_working_directory",
+			ctx.plugin_id,
+		)
+	}
+
 	fmt.println("[vscode_default] Layout created successfully")
 	return true
 }
@@ -113,6 +140,18 @@ vscode_default_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) ->
 	if state == nil do return false
 
 	#partial switch event.type {
+	case .Custom_Signal:
+		// Handle keyboard shortcut events
+		#partial switch payload in event.payload {
+		case core.EventPayload_Custom:
+			if payload.name == "select_working_directory" {
+				fmt.println("[vscode_default] Keyboard shortcut triggered: select_working_directory")
+				fmt.println("[vscode_default] TODO: Open directory picker dialog")
+				return true // Consume the event
+			}
+		}
+		return false
+
 	case .App_Startup:
 		fmt.println(
 			"[vscode_default] Received App_Startup event, emitting Layout_Container_Ready events",

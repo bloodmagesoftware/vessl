@@ -22,13 +22,14 @@ PluginVTable :: struct {
 // Plugin Context - Passed to all plugin procedures
 // Note: ui_api is rawptr to avoid circular dependency with ui package
 PluginContext :: struct {
-	eventbus:        ^EventBus,
-	plugin_id:       string,
-	user_data:       rawptr,
-	allocator:       mem.Allocator,
-	ui_api:          rawptr, // ^UIPluginAPI from ui package (cast when needed)
-	plugin_registry: rawptr, // ^PluginRegistry (cast when needed) - allows plugins to dispatch events
-	ctx:             rawptr, // Reserved field (context is a keyword)
+	eventbus:          ^EventBus,
+	plugin_id:         string,
+	user_data:         rawptr,
+	allocator:         mem.Allocator,
+	ui_api:            rawptr, // ^UIPluginAPI from ui package (cast when needed)
+	plugin_registry:   rawptr, // ^PluginRegistry (cast when needed) - allows plugins to dispatch events
+	shortcut_registry: rawptr, // ^ShortcutRegistry - allows plugins to register keyboard shortcuts
+	ctx:               rawptr, // Reserved field (context is a keyword)
 }
 
 // Plugin struct
@@ -131,12 +132,13 @@ update_plugins :: proc(registry: ^PluginRegistry, dt: f32) {
 }
 
 // Initialize a plugin (call after registration)
-// ui_api_ptr is rawptr to avoid circular dependency
+// ui_api_ptr and shortcut_registry_ptr are rawptr to avoid circular dependency
 init_plugin :: proc(
 	registry: ^PluginRegistry,
 	plugin_id: string,
 	eventbus: ^EventBus,
 	ui_api_ptr: rawptr,
+	shortcut_registry_ptr: rawptr = nil,
 ) -> bool {
 	if registry == nil do return false
 
@@ -152,6 +154,7 @@ init_plugin :: proc(
 	plugin.plugin_ctx.allocator = registry.allocator
 	plugin.plugin_ctx.ui_api = ui_api_ptr
 	plugin.plugin_ctx.plugin_registry = cast(rawptr)registry
+	plugin.plugin_ctx.shortcut_registry = shortcut_registry_ptr
 
 	// Call init
 	if plugin.vtable.init != nil {
