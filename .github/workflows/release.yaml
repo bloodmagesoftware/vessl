@@ -23,7 +23,7 @@ jobs:
             odin-target: linux_amd64
             archive-ext: tar.gz
             platform: linux
-          - os: blacksmith-2vcpu-ubuntu-2404-arm
+          - os: ubuntu-24.04-arm
             target: linux-arm64
             odin-target: linux_arm64
             archive-ext: tar.gz
@@ -33,7 +33,7 @@ jobs:
             odin-target: windows_amd64
             archive-ext: zip
             platform: windows
-          - os: blacksmith-2vcpu-windows-2025
+          - os: windows-11-arm
             target: windows-arm64
             odin-target: windows_arm64
             archive-ext: zip
@@ -227,19 +227,19 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           mkdir -p Casks
-          cat > Casks/${APP_NAME}.rb << CASK_EOF
-          cask "${APP_NAME}" do
-            version "${VERSION}"
-            on_arm do
-              sha256 "${SHA_MACOS}"
-              url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64.tar.gz"
-            end
-            name "${APP_NAME}"
-            desc "High-performance extensible IDE"
-            homepage "https://github.com/${REPO}"
-            app "${APP_NAME}.app"
-          end
-          CASK_EOF
+          cat > Casks/${APP_NAME}.rb <<CASK_EOF
+cask "${APP_NAME}" do
+  version "${VERSION}"
+  on_arm do
+    sha256 "${SHA_MACOS}"
+    url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64.tar.gz"
+  end
+  name "${APP_NAME}"
+  desc "High-performance extensible IDE"
+  homepage "https://github.com/${REPO}"
+  app "${APP_NAME}.app"
+end
+CASK_EOF
 
       - name: Generate Formula
         env:
@@ -252,37 +252,41 @@ jobs:
         run: |
           # Capitalize first letter for Ruby class name
           CLASS_NAME="$(echo "${APP_NAME}" | sed 's/./\U&/')"
-          cat > ${APP_NAME}.rb << FORMULA_EOF
-          class ${CLASS_NAME} < Formula
-            desc "High-performance extensible IDE"
-            homepage "https://github.com/${REPO}"
-            version "${VERSION}"
-            license "MIT"
-            on_macos do
-              on_arm do
-                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64-cli.tar.gz"
-                sha256 "${SHA_MACOS_CLI}"
-              end
-            end
-            on_linux do
-              on_intel do
-                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-amd64.tar.gz"
-                sha256 "${SHA_LINUX_AMD64}"
-              end
-              on_arm do
-                url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-arm64.tar.gz"
-                sha256 "${SHA_LINUX_ARM64}"
-              end
-            end
-            def install
-              bin.install "${APP_NAME}"
-              (share/"${APP_NAME}").install "assets"
-            end
-            test do
-              assert_predicate bin/"${APP_NAME}", :executable?
-            end
-          end
-          FORMULA_EOF
+          cat > ${APP_NAME}.rb <<FORMULA_EOF
+class ${CLASS_NAME} < Formula
+  desc "High-performance extensible IDE"
+  homepage "https://github.com/${REPO}"
+  version "${VERSION}"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-macos-arm64-cli.tar.gz"
+      sha256 "${SHA_MACOS_CLI}"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-amd64.tar.gz"
+      sha256 "${SHA_LINUX_AMD64}"
+    end
+    on_arm do
+      url "https://github.com/${REPO}/releases/download/${TAG}/${APP_NAME}-linux-arm64.tar.gz"
+      sha256 "${SHA_LINUX_ARM64}"
+    end
+  end
+
+  def install
+    bin.install "${APP_NAME}"
+    (share/"${APP_NAME}").install "assets"
+  end
+
+  test do
+    assert_predicate bin/"${APP_NAME}", :executable?
+  end
+end
+FORMULA_EOF
 
       - name: Push to Homebrew Tap
         env:
