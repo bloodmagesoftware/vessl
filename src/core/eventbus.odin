@@ -206,7 +206,7 @@ emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
 // =============================================================================
 
 // Keyboard modifier flags - Platform-specific for clarity
-// 
+//
 // Windows/Linux modifiers:
 //   - Ctrl:  Control key (primary modifier for shortcuts like Ctrl+S)
 //   - Alt:   Alt key
@@ -225,13 +225,13 @@ emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
 //
 KeyModifierFlag :: enum {
 	// Windows/Linux modifiers
-	Ctrl,  // Control key on Windows/Linux
-	Alt,   // Alt key on Windows/Linux
-	Meta,  // Windows key on Windows/Linux
+	Ctrl, // Control key on Windows/Linux
+	Alt, // Alt key on Windows/Linux
+	Meta, // Windows key on Windows/Linux
 
 	// macOS modifiers
-	Cmd,     // Command key on macOS (⌘)
-	Opt,     // Option key on macOS (⌥)
+	Cmd, // Command key on macOS (⌘)
+	Opt, // Option key on macOS (⌥)
 	CtrlMac, // Control key on macOS (⌃)
 
 	// Shared
@@ -357,7 +357,10 @@ find_shortcut :: proc(
 	registry: ^ShortcutRegistry,
 	key: i32,
 	modifiers: KeyModifier,
-) -> (string, bool) {
+) -> (
+	string,
+	bool,
+) {
 	if registry == nil do return "", false
 
 	sync.mutex_lock(&registry.mutex)

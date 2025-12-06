@@ -371,7 +371,7 @@ main :: proc() {
 		// Check for pending folder selection from dialog callback
 		if folder_path, has_pending := ui.check_pending_folder_selection(); has_pending {
 			fmt.printf("[main] Folder selected via dialog: %s\n", folder_path)
-			
+
 			// Emit Working_Directory_Changed event
 			wd_payload := core.EventPayload_WorkingDirectory {
 				path = folder_path,
@@ -380,10 +380,10 @@ main :: proc() {
 			if wd_event != nil {
 				core.dispatch_event_to_plugins(plugin_registry, wd_event)
 			}
-			
+
 			// Free the folder path string (it was cloned in the callback)
 			delete(folder_path)
-			
+
 			// Request render to show updated UI
 			sync.mutex_lock(&render_required_mutex)
 			render_required = true

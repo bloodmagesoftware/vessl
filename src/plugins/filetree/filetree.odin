@@ -138,7 +138,10 @@ build_filetree_ui :: proc(
 	elapsed := time.tick_diff(actual_start, time.tick_now())
 	if time.duration_milliseconds(elapsed) > TIMEOUT_MS {
 		error_msg := fmt.tprintf("Timeout after %dms", TIMEOUT_MS)
-		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(error_msg, state.allocator)
+		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(
+			error_msg,
+			state.allocator,
+		)
 		fmt.eprintf("[filetree] %s: %s\n", dir_path, error_msg)
 		return .Timeout
 	}
@@ -153,7 +156,10 @@ build_filetree_ui :: proc(
 	dir, open_err := os.open(dir_path)
 	if open_err != os.ERROR_NONE {
 		error_msg := fmt.tprintf("Cannot open: %v", open_err)
-		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(error_msg, state.allocator)
+		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(
+			error_msg,
+			state.allocator,
+		)
 		fmt.eprintf("[filetree] %s: %s\n", dir_path, error_msg)
 		return .Error
 	}
@@ -163,7 +169,10 @@ build_filetree_ui :: proc(
 	elapsed = time.tick_diff(actual_start, time.tick_now())
 	if time.duration_milliseconds(elapsed) > TIMEOUT_MS {
 		error_msg := fmt.tprintf("Timeout after %dms", TIMEOUT_MS)
-		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(error_msg, state.allocator)
+		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(
+			error_msg,
+			state.allocator,
+		)
 		fmt.eprintf("[filetree] %s: %s\n", dir_path, error_msg)
 		return .Timeout
 	}
@@ -172,7 +181,10 @@ build_filetree_ui :: proc(
 	entries, read_err := os.read_dir(dir, MAX_ENTRIES, state.allocator)
 	if read_err != os.ERROR_NONE {
 		error_msg := fmt.tprintf("Cannot read: %v", read_err)
-		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(error_msg, state.allocator)
+		state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(
+			error_msg,
+			state.allocator,
+		)
 		fmt.eprintf("[filetree] %s: %s\n", dir_path, error_msg)
 		return .Error
 	}
@@ -193,7 +205,10 @@ build_filetree_ui :: proc(
 		elapsed = time.tick_diff(actual_start, time.tick_now())
 		if time.duration_milliseconds(elapsed) > TIMEOUT_MS {
 			error_msg := fmt.tprintf("Timeout after %dms", TIMEOUT_MS)
-			state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(error_msg, state.allocator)
+			state.failed_dirs[strings.clone(dir_path, state.allocator)] = strings.clone(
+				error_msg,
+				state.allocator,
+			)
 			fmt.eprintf("[filetree] %s: %s\n", dir_path, error_msg)
 			return .Timeout
 		}
@@ -232,7 +247,8 @@ build_filetree_ui :: proc(
 		entry_node := ui.create_node(entry_id, .Container, state.allocator)
 		entry_node.style.width = ui.SIZE_FULL
 		entry_node.style.height = ui.sizing_fit() // Auto-size to content
-		entry_node.style.color = is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
+		entry_node.style.color =
+			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
 		entry_node.style.layout_dir = .TopDown // Vertical layout: text on top, children below
 		entry_node.style.padding = {0, 0, 0, 0} // No padding on entry node itself
 
@@ -241,7 +257,8 @@ build_filetree_ui :: proc(
 		row_node := ui.create_node(row_id, .Container, state.allocator)
 		row_node.style.width = ui.SIZE_FULL
 		row_node.style.height = ui.sizing_fit()
-		row_node.style.color = is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
+		row_node.style.color =
+			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
 		row_node.style.layout_dir = .LeftRight // Horizontal: indentation + text
 		row_node.style.padding = {u16(depth * 16), 4, 4, 4} // Indentation left, padding for better click target
 
@@ -249,14 +266,17 @@ build_filetree_ui :: proc(
 		// Store full_path in a cloned string for the callback
 		dir_path_clone := strings.clone(full_path, state.allocator)
 		// Create a context struct to pass both state, path, entry node, and depth
-		dir_callback_ctx := new(struct {
+		dir_callback_ctx := new(
+			struct {
 				state:      ^FiletreeState,
 				path:       string,
 				entry_node: ^ui.UINode,
 				depth:      int,
 				text_node:  ^ui.UINode, // Store text node to update color on error
 				row_node:   ^ui.UINode, // Store row node to update color on error
-			}, state.allocator)
+			},
+			state.allocator,
+		)
 		dir_callback_ctx.state = state
 		dir_callback_ctx.path = dir_path_clone
 		dir_callback_ctx.entry_node = entry_node
@@ -451,7 +471,10 @@ build_filetree_ui :: proc(
 		truncation_text := ui.create_node(truncation_text_id, .Text, state.allocator)
 		truncation_text.style.width = ui.sizing_grow()
 		truncation_text.style.height = ui.sizing_fit()
-		truncation_text.text_content = strings.clone(fmt.tprintf("(%d+ more...)", MAX_ENTRIES), state.allocator)
+		truncation_text.text_content = strings.clone(
+			fmt.tprintf("(%d+ more...)", MAX_ENTRIES),
+			state.allocator,
+		)
 		truncation_text.style.color = {0.5, 0.5, 0.5, 1.0} // Gray text for indicator
 
 		ui.add_child(truncation_node, truncation_text)
@@ -484,38 +507,41 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 		#partial switch payload in event.payload {
 		case core.EventPayload_WorkingDirectory:
 			fmt.printf("[filetree] Working directory changed to: %s\n", payload.path)
-			
+
 			// Update root path
 			if state.root_path != "" {
 				delete(state.root_path)
 			}
 			state.root_path = strings.clone(payload.path, state.allocator)
-			
+
 			// Clear all expanded state
 			clear(&state.expanded)
-			
+
 			// Clear failed directories
 			clear(&state.failed_dirs)
-			
+
 			// Clear file entries
 			clear(&state.file_entries)
-			
+
 			// Clear and rebuild filetree UI if we have a root node
 			if state.root_node != nil {
 				// Clear all children from the root node
 				ui.clear_children_except(state.root_node, 0)
-				
+
 				// Rebuild the filetree with new root path
 				fmt.printf("[filetree] Rebuilding filetree UI for: %s\n", state.root_path)
 				start := time.tick_now()
 				result := build_filetree_ui(state, state.root_node, state.root_path, 0, start)
 				if result == .Error || result == .Timeout {
-					fmt.eprintf("[filetree] Failed to build filetree for new root: %s\n", state.root_path)
+					fmt.eprintf(
+						"[filetree] Failed to build filetree for new root: %s\n",
+						state.root_path,
+					)
 				} else {
 					fmt.println("[filetree] Successfully rebuilt filetree UI")
 				}
 			}
-			
+
 			return true // Consume the event
 		}
 		return false
@@ -563,7 +589,10 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 				start := time.tick_now()
 				result := build_filetree_ui(state, state.root_node, state.root_path, 0, start)
 				if result == .Error || result == .Timeout {
-					fmt.eprintf("[filetree] Failed to build filetree for root: %s\n", state.root_path)
+					fmt.eprintf(
+						"[filetree] Failed to build filetree for root: %s\n",
+						state.root_path,
+					)
 				}
 				fmt.printf("[filetree] Finished building filetree UI\n")
 			}

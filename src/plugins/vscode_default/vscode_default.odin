@@ -145,8 +145,10 @@ vscode_default_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) ->
 		#partial switch payload in event.payload {
 		case core.EventPayload_Custom:
 			if payload.name == "select_working_directory" {
-				fmt.println("[vscode_default] Keyboard shortcut triggered: select_working_directory")
-				
+				fmt.println(
+					"[vscode_default] Keyboard shortcut triggered: select_working_directory",
+				)
+
 				// Open native folder selection dialog using Platform API
 				if ctx.platform_api != nil {
 					platform_api_ptr := cast(^ui.PlatformAPI)ctx.platform_api
@@ -154,7 +156,7 @@ vscode_default_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) ->
 				} else {
 					fmt.eprintln("[vscode_default] Platform API not available")
 				}
-				
+
 				return true // Consume the event
 			}
 		}

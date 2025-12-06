@@ -10,11 +10,11 @@ import sdl "vendor:sdl3"
 // PlatformAPI - Provides platform-level functionality for plugins
 // Plugins should use this API instead of directly accessing SDL
 PlatformAPI :: struct {
-	window:    ^sdl.Window,
-	allocator: mem.Allocator,
+	window:     ^sdl.Window,
+	allocator:  mem.Allocator,
 	// Callback context for async dialog operations
 	dialog_ctx: ^DialogCallbackContext,
-	mutex:     sync.Mutex,
+	mutex:      sync.Mutex,
 }
 
 // Context passed to dialog callbacks
@@ -68,7 +68,7 @@ destroy_platform_api :: proc(api: ^PlatformAPI) {
 folder_dialog_sdl_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring, filter: i32) {
 	// Set up proper Odin context for C callback (needed for allocators, fmt, etc.)
 	context = runtime.default_context()
-	
+
 	dialog_ctx := cast(^DialogCallbackContext)userdata
 	if dialog_ctx == nil {
 		return
@@ -89,10 +89,10 @@ folder_dialog_sdl_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring, 
 	// we'll use a different approach - store the path and let main loop process it
 	// For now, we'll use a global to communicate back
 	// This is set and then the main loop will check it
-	
+
 	sync.mutex_lock(&g_pending_folder_mutex)
 	defer sync.mutex_unlock(&g_pending_folder_mutex)
-	
+
 	// Clone the path since SDL will free the filelist after callback returns
 	if g_pending_folder_path != "" {
 		delete(g_pending_folder_path)
@@ -154,4 +154,3 @@ check_pending_folder_selection :: proc() -> (string, bool) {
 
 	return "", false
 }
-
