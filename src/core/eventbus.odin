@@ -15,6 +15,9 @@ EventType :: enum {
 	// UI Layout Events
 	Layout_Container_Ready, // Sent by Main Config to signal a slot is ready
 
+	// Workspace Events
+	Working_Directory_Changed, // Emitted when user selects a new working directory
+
 	// Editor Events
 	Buffer_Open,
 	Buffer_Save,
@@ -44,6 +47,10 @@ EventPayload_Custom :: struct {
 	data: rawptr,
 }
 
+EventPayload_WorkingDirectory :: struct {
+	path: string, // The new working directory path
+}
+
 // Event struct
 Event :: struct {
 	type:    EventType,
@@ -53,6 +60,7 @@ Event :: struct {
 		EventPayload_Buffer,
 		EventPayload_File,
 		EventPayload_Custom,
+		EventPayload_WorkingDirectory,
 	},
 }
 
@@ -176,6 +184,7 @@ emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
 		EventPayload_Buffer,
 		EventPayload_File,
 		EventPayload_Custom,
+		EventPayload_WorkingDirectory,
 	}) -> (^Event, bool) {
 	if bus == nil do return nil, false
 

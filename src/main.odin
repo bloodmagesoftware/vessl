@@ -86,6 +86,16 @@ main :: proc() {
 	}
 	defer ui_api.destroy_ui_api(ui_api_ptr)
 
+	// Initialize Platform API (for native dialogs, etc.)
+	// Note: We pass eventbus and plugin_registry as rawptr - they'll be set up properly
+	// and used when dialog callbacks need to emit events
+	platform_api_ptr := ui.init_platform_api(window_ctx.window, nil, nil)
+	if platform_api_ptr == nil {
+		fmt.eprintln("Failed to initialize Platform API")
+		return
+	}
+	defer ui.destroy_platform_api(platform_api_ptr)
+
 	// Register and initialize vscode_default plugin
 	vscode_plugin := new(core.Plugin)
 	vscode_plugin.id = "builtin:vscode_default"
@@ -98,13 +108,14 @@ main :: proc() {
 		return
 	}
 
-	// Cast ui_api_ptr and shortcut_registry to rawptr to pass to init_plugin
+	// Cast ui_api_ptr, shortcut_registry, and platform_api to rawptr to pass to init_plugin
 	if !core.init_plugin(
 		plugin_registry,
 		"builtin:vscode_default",
 		eventbus,
 		cast(rawptr)ui_api_ptr,
 		cast(rawptr)shortcut_registry,
+		cast(rawptr)platform_api_ptr,
 	) {
 		fmt.eprintln("Failed to initialize vscode_default plugin")
 		return
@@ -123,7 +134,14 @@ main :: proc() {
 	}
 
 	// Initialize filetree plugin
-	if !core.init_plugin(plugin_registry, "builtin:filetree", eventbus, cast(rawptr)ui_api_ptr, cast(rawptr)shortcut_registry) {
+	if !core.init_plugin(
+		plugin_registry,
+		"builtin:filetree",
+		eventbus,
+		cast(rawptr)ui_api_ptr,
+		cast(rawptr)shortcut_registry,
+		cast(rawptr)platform_api_ptr,
+	) {
 		fmt.eprintln("Failed to initialize filetree plugin")
 		return
 	}
@@ -349,6 +367,29 @@ main :: proc() {
 		dt := f32(current_time - last_frame_time) / 1000.0 // Convert to seconds
 		last_frame_time = current_time
 		core.update_plugins(plugin_registry, dt)
+
+		// Check for pending folder selection from dialog callback
+		if folder_path, has_pending := ui.check_pending_folder_selection(); has_pending {
+			fmt.printf("[main] Folder selected via dialog: %s\n", folder_path)
+			
+			// Emit Working_Directory_Changed event
+			wd_payload := core.EventPayload_WorkingDirectory {
+				path = folder_path,
+			}
+			wd_event, _ := core.emit_event_typed(eventbus, .Working_Directory_Changed, wd_payload)
+			if wd_event != nil {
+				core.dispatch_event_to_plugins(plugin_registry, wd_event)
+			}
+			
+			// Free the folder path string (it was cloned in the callback)
+			delete(folder_path)
+			
+			// Request render to show updated UI
+			sync.mutex_lock(&render_required_mutex)
+			render_required = true
+			needs_render = true
+			sync.mutex_unlock(&render_required_mutex)
+		}
 
 		// 5. Check if we should Draw
 		// Re-check time because WaitEvent might have slept

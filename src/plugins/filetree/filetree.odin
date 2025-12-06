@@ -479,6 +479,47 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 	}
 
 	#partial switch event.type {
+	case .Working_Directory_Changed:
+		// Handle working directory change - update root path and rebuild filetree
+		#partial switch payload in event.payload {
+		case core.EventPayload_WorkingDirectory:
+			fmt.printf("[filetree] Working directory changed to: %s\n", payload.path)
+			
+			// Update root path
+			if state.root_path != "" {
+				delete(state.root_path)
+			}
+			state.root_path = strings.clone(payload.path, state.allocator)
+			
+			// Clear all expanded state
+			clear(&state.expanded)
+			
+			// Clear failed directories
+			clear(&state.failed_dirs)
+			
+			// Clear file entries
+			clear(&state.file_entries)
+			
+			// Clear and rebuild filetree UI if we have a root node
+			if state.root_node != nil {
+				// Clear all children from the root node
+				ui.clear_children_except(state.root_node, 0)
+				
+				// Rebuild the filetree with new root path
+				fmt.printf("[filetree] Rebuilding filetree UI for: %s\n", state.root_path)
+				start := time.tick_now()
+				result := build_filetree_ui(state, state.root_node, state.root_path, 0, start)
+				if result == .Error || result == .Timeout {
+					fmt.eprintf("[filetree] Failed to build filetree for new root: %s\n", state.root_path)
+				} else {
+					fmt.println("[filetree] Successfully rebuilt filetree UI")
+				}
+			}
+			
+			return true // Consume the event
+		}
+		return false
+
 	case .Layout_Container_Ready:
 		fmt.println("[filetree] Processing Layout_Container_Ready event")
 		// Check if this event is for us - use type switch for safe casting
