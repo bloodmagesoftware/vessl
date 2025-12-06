@@ -5,3 +5,10 @@
 *.iconset/
 *.icns
 *.png
+
+# Tree-sitter compiled libraries (built by build_parsers.sh)
+vendor/odin-tree-sitter/tree-sitter/
+vendor/odin-tree-sitter/parsers/*/parser.a
+vendor/odin-tree-sitter/parsers/*/parser.lib
+vendor/odin-tree-sitter/parsers/*/parser.dSYM/
+vendor/odin-tree-sitter/*.o
