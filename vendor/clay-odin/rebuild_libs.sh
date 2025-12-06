@@ -25,7 +25,7 @@ if ! command -v zig &> /dev/null; then
     exit 1
 fi
 
-# Function to build
+# Function to build with zig (for Linux/Windows cross-compilation)
 build_lib() {
     TARGET=$1
     OUTPUT_DIR=$2
@@ -47,6 +47,21 @@ build_lib() {
     rm clay.o
 }
 
+# Function to build macOS libraries with native clang (produces Mach-O format)
+# Zig cross-compilation produces ELF format which doesn't work on macOS
+build_macos_lib() {
+    ARCH=$1       # arm64 or x86_64
+    OUTPUT_DIR=$2
+    
+    echo "Building for macOS $ARCH (native clang)..."
+    mkdir -p "$SCRIPT_DIR/$OUTPUT_DIR"
+    
+    clang -target ${ARCH}-apple-macos -c clay_impl.c -o clay.o -O2 -DNDEBUG
+    ar rcs "$SCRIPT_DIR/$OUTPUT_DIR/clay.a" clay.o
+    
+    rm clay.o
+}
+
 # Build for supported targets
 # Directory naming: {os}-{arch} where arch is amd64 or arm64
 
@@ -62,11 +77,11 @@ build_lib "x86_64-windows-msvc" "windows-amd64" "clay.lib" "lib"
 # Windows ARM64 (MSVC)
 # build_lib "aarch64-windows-msvc" "windows-arm64" "clay.lib" "lib"
 
-# macOS AMD64
-build_lib "x86_64-macos" "macos-amd64" "clay.a" "a"
+# macOS AMD64 (requires running on macOS with clang)
+build_macos_lib "x86_64" "macos-amd64"
 
-# macOS ARM64
-build_lib "aarch64-macos" "macos-arm64" "clay.a" "a"
+# macOS ARM64 (requires running on macOS with clang)
+build_macos_lib "arm64" "macos-arm64"
 
 # Clean up
 cd "$SCRIPT_DIR"
