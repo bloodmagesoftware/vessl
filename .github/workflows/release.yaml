@@ -89,20 +89,11 @@ jobs:
           # Create iconset directory
           mkdir -p ${{ env.APP_NAME }}.iconset
 
-          # Generate PNG icons at required sizes from SVG
-          for size in 16 32 128 256 512 1024; do
+          # Generate all required iconset files directly from SVG
+          for size in 16 32 128 256 512; do
             rsvg-convert -w $size -h $size icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
+            rsvg-convert -w $((size*2)) -h $((size*2)) icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}@2x.png
           done
-
-          # Create @2x versions by renaming/copying
-          cp ${{ env.APP_NAME }}.iconset/icon_32x32.png ${{ env.APP_NAME }}.iconset/icon_16x16@2x.png
-          cp ${{ env.APP_NAME }}.iconset/icon_64x64.png ${{ env.APP_NAME }}.iconset/icon_32x32@2x.png 2>/dev/null || rsvg-convert -w 64 -h 64 icon.svg -o ${{ env.APP_NAME }}.iconset/icon_32x32@2x.png
-          cp ${{ env.APP_NAME }}.iconset/icon_256x256.png ${{ env.APP_NAME }}.iconset/icon_128x128@2x.png
-          cp ${{ env.APP_NAME }}.iconset/icon_512x512.png ${{ env.APP_NAME }}.iconset/icon_256x256@2x.png
-          cp ${{ env.APP_NAME }}.iconset/icon_1024x1024.png ${{ env.APP_NAME }}.iconset/icon_512x512@2x.png
-
-          # Remove the 1024x1024 (not needed as a base, only as @2x of 512)
-          rm ${{ env.APP_NAME }}.iconset/icon_1024x1024.png
 
           # Generate .icns file
           iconutil -c icns ${{ env.APP_NAME }}.iconset -o AppIcon.icns
