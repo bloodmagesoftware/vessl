@@ -11,10 +11,10 @@ A high-performance, IDE built in Odin using SDL3 for windowing/input and Clay fo
 1. **Odin Compiler**: Install from https://odin-lang.org/
    - Verify installation: `odin version`
 
-2. **SDL3**: Since SDL3 is vendored in Odin, you typically don't need to install it separately. However, if you get linker errors, you may need to:
-   - On macOS: `brew install sdl3`
-   - On Linux: Install SDL3 development packages via your package manager
-   - On Windows: Download SDL3 from https://github.com/libsdl-org/SDL/releases
+2. **SDL3 and SDL3_ttf**: Required for windowing, input, and text rendering.
+   - On macOS: `brew install sdl3 sdl3_ttf`
+   - On Linux (Debian/Ubuntu): Build from source or use a PPA - SDL3 is not yet in standard repositories
+   - On Windows: Download SDL3 and SDL3_ttf from https://github.com/libsdl-org/SDL/releases and https://github.com/libsdl-org/SDL_ttf/releases
 
 ### Build Command
 

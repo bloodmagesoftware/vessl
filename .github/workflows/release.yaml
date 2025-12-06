@@ -33,11 +33,6 @@ jobs:
             odin-target: windows_amd64
             archive-ext: zip
             platform: windows
-          - os: windows-11-arm
-            target: windows-arm64
-            odin-target: windows_arm64
-            archive-ext: zip
-            platform: windows
           - os: macos-latest
             target: macos-arm64
             odin-target: darwin_arm64
@@ -58,7 +53,21 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev
+          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev cmake ninja-build libfreetype-dev
+
+          # Build and install SDL3 from source
+          git clone --depth 1 https://github.com/libsdl-org/SDL.git SDL3
+          cmake -S SDL3 -B SDL3/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build SDL3/build
+          sudo cmake --install SDL3/build
+
+          # Build and install SDL3_ttf from source
+          git clone --depth 1 https://github.com/libsdl-org/SDL_ttf.git SDL3_ttf
+          cmake -S SDL3_ttf -B SDL3_ttf/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build SDL3_ttf/build
+          sudo cmake --install SDL3_ttf/build
+
+          sudo ldconfig
 
       - name: Determine binary name
         id: binary
@@ -81,7 +90,7 @@ jobs:
       - name: Install macOS build dependencies
         if: matrix.platform == 'macos'
         run: |
-          brew install librsvg
+          brew install librsvg sdl3 sdl3_ttf
 
       - name: Create macOS app bundle
         if: matrix.platform == 'macos'

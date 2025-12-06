@@ -3,11 +3,7 @@ package clay
 import "core:c"
 
 when ODIN_OS == .Windows {
-	when ODIN_ARCH == .arm64 {
-		foreign import Clay "windows-arm64/clay.lib"
-	} else {
-		foreign import Clay "windows-amd64/clay.lib"
-	}
+	foreign import Clay "windows-amd64/clay.lib"
 } else when ODIN_OS == .Linux {
 	when ODIN_ARCH == .arm64 {
 		foreign import Clay "linux-arm64/clay.a"
