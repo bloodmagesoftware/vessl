@@ -109,7 +109,6 @@ jobs:
           cp ${{ steps.binary.outputs.name }} ${{ env.APP_NAME }}.app/Contents/MacOS/
           cp assets/macos/Info.plist ${{ env.APP_NAME }}.app/Contents/
           cp AppIcon.icns ${{ env.APP_NAME }}.app/Contents/Resources/
-          cp -r assets ${{ env.APP_NAME }}.app/Contents/Resources/
 
           # Clean up temporary files
           rm -rf ${{ env.APP_NAME }}.iconset AppIcon.icns
@@ -120,15 +119,14 @@ jobs:
         run: |
           mkdir -p dist
           cp ${{ steps.binary.outputs.name }} dist/
-          cp -r assets dist/
 
       - name: Create archive (macOS)
         if: matrix.platform == 'macos'
         run: |
           # App bundle archive
           tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }} ${{ env.APP_NAME }}.app
-          # CLI binary archive for Homebrew Formula
-          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}-cli.${{ matrix.archive-ext }} ${{ steps.binary.outputs.name }} assets
+          # CLI binary archive for Homebrew Formula (assets embedded in binary)
+          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}-cli.${{ matrix.archive-ext }} ${{ steps.binary.outputs.name }}
 
       - name: Create archive (Linux)
         if: matrix.platform == 'linux'
@@ -261,7 +259,6 @@ jobs:
 
             def install
               bin.install "${APP_NAME}"
-              (share/"${APP_NAME}").install "assets"
             end
 
             test do

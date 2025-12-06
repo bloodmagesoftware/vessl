@@ -5,10 +5,7 @@ import win "../core"
 import "base:runtime"
 import "core:c"
 import "core:fmt"
-import "core:math/linalg"
 import "core:mem"
-import "core:os"
-import "core:path/filepath"
 import "core:strings"
 import sdl "vendor:sdl3"
 import ttf "vendor:sdl3/ttf"
@@ -150,7 +147,35 @@ init_renderer :: proc(
 	return ctx
 }
 
-// Load TTF font from assets/fonts/ directory
+// Load TTF font from memory (embedded data)
+load_font_from_memory :: proc(data: []u8, size: f32) -> (font: ^ttf.Font, ok: bool) {
+	if len(data) == 0 {
+		fmt.eprintln("Error: Empty font data")
+		return nil, false
+	}
+
+	// Create an IOStream from memory
+	io_stream := sdl.IOFromConstMem(raw_data(data), c.size_t(len(data)))
+	if io_stream == nil {
+		fmt.eprintf("Failed to create IOStream from font data: %s\n", sdl.GetError())
+		return nil, false
+	}
+
+	// Load font from IOStream
+	// closeio = true means SDL will close the stream when the font is closed
+	font = ttf.OpenFontIO(io_stream, true, size)
+	if font == nil {
+		fmt.eprintf("Failed to load font from memory: %s\n", sdl.GetError())
+		// If font loading failed, we need to close the stream manually
+		sdl.CloseIO(io_stream)
+		return nil, false
+	}
+
+	fmt.printf("Successfully loaded embedded font at size %.0f\n", size)
+	return font, true
+}
+
+// Load TTF font from file path (fallback for external fonts)
 load_font :: proc(font_path: string, size: f32) -> (font: ^ttf.Font, ok: bool) {
 	// Try to load the font
 	font_cstr := strings.clone_to_cstring(font_path)
@@ -167,39 +192,38 @@ load_font :: proc(font_path: string, size: f32) -> (font: ^ttf.Font, ok: bool) {
 	return font, true
 }
 
-// Try to load a font from assets/fonts/
+// Try to load a font from embedded data (primary) or filesystem (fallback)
 load_default_font :: proc() -> (font: ^ttf.Font, ok: bool) {
-	// Try fonts in order of preference
-	font_paths := []string {
-		"assets/fonts/JetBrainsMono[wght].ttf",
-		"assets/fonts/Roboto-VariableFont_wdth,wght.ttf",
-		"assets/fonts/JetBrainsMono-Italic[wght].ttf",
-		"assets/fonts/Roboto-Italic-VariableFont_wdth,wght.ttf",
-	}
-
 	// Default font size (32 points for better readability)
 	default_size: f32 = 32.0
 
-	fmt.printf("Attempting to load TTF font...\n")
+	fmt.printf("Attempting to load embedded TTF font...\n")
 
-	for path in font_paths {
-		// Check if file exists
-		if os.exists(path) {
-			fmt.printf("Found font file: %s\n", path)
-			font, ok := load_font(path, default_size)
-			if ok {
-				fmt.printf("Successfully loaded font: %s\n", path)
-				return font, true
-			} else {
-				fmt.eprintf("Failed to load font: %s\n", path)
-			}
+	// Try embedded fonts in order of preference
+	EmbeddedFont :: struct {
+		name: string,
+		data: []u8,
+	}
+
+	embedded_fonts := []EmbeddedFont {
+		{"JetBrains Mono", FONT_JETBRAINS_MONO[:]},
+		{"Roboto", FONT_ROBOTO[:]},
+		{"JetBrains Mono Italic", FONT_JETBRAINS_MONO_ITALIC[:]},
+		{"Roboto Italic", FONT_ROBOTO_ITALIC[:]},
+	}
+
+	for ef in embedded_fonts {
+		fmt.printf("Trying embedded font: %s\n", ef.name)
+		font, ok := load_font_from_memory(ef.data, default_size)
+		if ok {
+			fmt.printf("Successfully loaded embedded font: %s\n", ef.name)
+			return font, true
 		} else {
-			fmt.eprintf("Font file not found: %s\n", path)
+			fmt.eprintf("Failed to load embedded font: %s\n", ef.name)
 		}
 	}
 
-	fmt.eprintln("Warning: No font found in assets/fonts/, text rendering may not work")
-	fmt.eprintln("Current working directory:", os.get_current_directory())
+	fmt.eprintln("Warning: No embedded font could be loaded, text rendering may not work")
 	return nil, false
 }
 
