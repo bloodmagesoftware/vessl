@@ -2,8 +2,6 @@
 # Script to rebuild Clay static libraries for various architectures
 # Requires: zig, curl
 
-set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAY_H_URL="https://raw.githubusercontent.com/nicbarker/clay/main/clay.h"
 TEMP_DIR="/tmp/clay-build-$(date +%s)"
@@ -38,7 +36,9 @@ build_lib() {
     mkdir -p "$SCRIPT_DIR/$OUTPUT_DIR"
     
     # Compile object file
-    zig cc -target $TARGET -c clay_impl.c -o clay.o
+    # -fno-sanitize=all disables all sanitizers to avoid undefined reference errors
+    # -DNDEBUG disables debug assertions
+    zig cc -target $TARGET -c clay_impl.c -o clay.o -O2 -fno-sanitize=all -DNDEBUG
     
     # Create archive
     # Note: 'zig ar' wraps llvm-ar, which can handle both formats
@@ -60,7 +60,7 @@ build_lib "aarch64-linux-gnu" "linux-arm64" "clay.a" "a"
 build_lib "x86_64-windows-msvc" "windows-amd64" "clay.lib" "lib"
 
 # Windows ARM64 (MSVC)
-build_lib "aarch64-windows-msvc" "windows-arm64" "clay.lib" "lib"
+# build_lib "aarch64-windows-msvc" "windows-arm64" "clay.lib" "lib"
 
 # macOS AMD64
 build_lib "x86_64-macos" "macos-amd64" "clay.a" "a"
@@ -71,6 +71,3 @@ build_lib "aarch64-macos" "macos-arm64" "clay.a" "a"
 # Clean up
 cd "$SCRIPT_DIR"
 rm -rf "$TEMP_DIR"
-
-echo "✅ Libraries rebuilt successfully!"
-
