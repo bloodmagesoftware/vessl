@@ -525,6 +525,144 @@ container.style.clip_vertical = true
 container.style.clip_horizontal = false
 ```
 
+### 11. Hidden Elements
+
+Use the `hidden` attribute to hide elements without removing them from the tree:
+
+```odin
+// Hide an element (and all its children)
+node.style.hidden = true
+
+// Show an element
+node.style.hidden = false
+```
+
+Hidden elements:
+- Are not rendered by Clay
+- Do not receive click events
+- Do not affect hover state
+- Children of hidden elements are also hidden
+
+This is useful for tab containers, collapsible sections, and conditional UI.
+
+## High-Level Components
+
+Vessl provides high-level components for common UI patterns. These components:
+- Are created via the VesslAPI
+- Return a `ComponentID` (distinct from `ElementID`) for interaction
+- Manage their own internal UINode tree
+- Handle user interactions automatically
+- Emit events when state changes
+
+### ComponentID vs ElementID
+
+- **`ElementID`**: Identifies a single UINode in the DOM tree (used for low-level UI)
+- **`ComponentID`**: Identifies a high-level component (tab container, checkbox, etc.)
+
+```odin
+// ElementID - for individual UI nodes
+node_id := api.ElementID("my_node")
+
+// ComponentID - for high-level components
+component_id := api.create_tab_container(ctx, parent_id, tabs)
+```
+
+### Tab Container
+
+A tab container displays a row of clickable tabs with associated content areas. Only the active tab's content is visible.
+
+#### Creating a Tab Container
+
+```odin
+// Define tabs with titles and content container IDs
+tabs := []api.TabInfo {
+    {title = "File 1", content_container_id = "tab_file1"},
+    {title = "File 2", content_container_id = "tab_file2"},
+    {title = "Settings", content_container_id = "tab_settings"},
+}
+
+// Create the tab container attached to a parent element
+tab_id := api.create_tab_container(ctx, api.ElementID("editor_area"), tabs)
+if tab_id == api.INVALID_COMPONENT_ID {
+    fmt.eprintln("Failed to create tab container")
+}
+
+// Store the component ID for later interaction
+state.my_tab_container = tab_id
+```
+
+#### Adding Content to Tabs
+
+Each tab has a `content_container_id` that you can use to attach content:
+
+```odin
+// Create content for the first tab
+content := api.create_node(api.ElementID("file1_content"), .Text, ctx.allocator)
+content.text_content = "Hello from File 1!"
+content.style.color = {1.0, 1.0, 1.0, 1.0}
+
+// Attach to the tab's content container
+api.attach_to_container(ctx, "tab_file1", content)
+```
+
+#### Interacting with Tab Containers
+
+```odin
+// Select a tab programmatically
+api.tab_container_select_tab(ctx, tab_id, 2) // Select third tab
+
+// Get the currently active tab index
+active := api.tab_container_get_active(ctx, tab_id) // Returns 0, 1, 2, etc. or -1
+
+// Add a new tab dynamically
+new_tab := api.TabInfo {
+    title = "New Tab",
+    content_container_id = "tab_new",
+}
+api.tab_container_add_tab(ctx, tab_id, new_tab)
+
+// Remove a tab
+api.tab_container_remove_tab(ctx, tab_id, 1) // Remove second tab
+```
+
+#### Tab Change Events
+
+When a tab is selected (by user click or programmatically), a `Component_Tab_Changed` event is emitted:
+
+```odin
+my_plugin_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
+    #partial switch event.type {
+    case .Component_Tab_Changed:
+        #partial switch payload in event.payload {
+        case api.EventPayload_TabChanged:
+            fmt.printf("Tab changed: component=%d, old=%d, new=%d, tab_id=%s\n",
+                u64(payload.component_id),
+                payload.old_index,
+                payload.new_index,
+                payload.tab_id,
+            )
+            return false // Don't consume, let others see it
+        }
+    }
+    return false
+}
+```
+
+#### Tab Container Visual Structure
+
+```
+┌─────────────────────────────────────────┐
+│ [Tab 1] [Tab 2] [Tab 3]  <- Tab Bar     │
+├─────────────────────────────────────────┤
+│                                          │
+│  Content Container (changes per tab)     │
+│  - Content for Tab 1 (visible)           │
+│  - Content for Tab 2 (hidden)            │
+│  - Content for Tab 3 (hidden)            │
+│                                          │
+└─────────────────────────────────────────┘
+```
+
 ## Keyboard Shortcuts
 
 Plugins can register keyboard shortcuts that trigger named events. This enables a powerful decoupled design: one plugin registers a shortcut, and any plugin (including a different one) can handle the resulting event.
@@ -682,6 +820,7 @@ Utility plugins may not have UI but provide services through events (e.g., a git
 - **`Buffer_Open`**: Emitted when a file should be opened
 - **`Buffer_Save`**: Emitted when a buffer should be saved
 - **`Cursor_Move`**: Emitted when the cursor moves in an editor
+- **`Component_Tab_Changed`**: Emitted when a tab is selected in a TabContainer (payload: `EventPayload_TabChanged`)
 - **`Custom_Signal`**: For custom plugin-to-plugin communication (including keyboard shortcuts)
 
 ## API Reference
@@ -690,17 +829,23 @@ Utility plugins may not have UI but provide services through events (e.g., a git
 
 ```odin
 // Events
-EventType :: enum { ... }
+EventType :: enum { ..., Component_Tab_Changed, ... }
 Event :: struct { type: EventType, handled: bool, payload: EventPayload }
-EventPayload :: union { EventPayload_Layout, EventPayload_Buffer, ... }
+EventPayload :: union { EventPayload_Layout, EventPayload_Buffer, EventPayload_TabChanged, ... }
 
 // UI
 ElementID :: distinct string
 ElementType :: enum { Container, Text }
 UINode :: struct { id: ElementID, type: ElementType, style: Style, ... }
-Style :: struct { width: Sizing, height: Sizing, color: [4]f32, ... }
+Style :: struct { width: Sizing, height: Sizing, color: [4]f32, hidden: bool, ... }
 Sizing :: struct { unit: SizingUnit, value: f32 }
 CursorType :: enum { Default, Hand, Text, Resize }
+
+// High-Level Components
+ComponentID :: distinct u64
+INVALID_COMPONENT_ID :: ComponentID(0)
+TabInfo :: struct { title: string, content_container_id: string }
+EventPayload_TabChanged :: struct { component_id: ComponentID, old_index: int, new_index: int, tab_id: string }
 
 // Plugin
 PluginContext :: struct { plugin_id: string, user_data: rawptr, allocator: mem.Allocator, api: ^VesslAPI }
@@ -726,14 +871,27 @@ add_child :: proc(parent: ^UINode, child: ^UINode)
 remove_child :: proc(parent: ^UINode, child: ^UINode)
 clear_children_except :: proc(node: ^UINode, keep_count: int = 0)
 
-// API convenience wrappers
+// API convenience wrappers - Events
 emit_event :: proc(ctx: ^PluginContext, type: EventType, payload: EventPayload) -> (^Event, bool)
 dispatch_event :: proc(ctx: ^PluginContext, event: ^Event) -> bool
+
+// API convenience wrappers - UI
 set_root_node :: proc(ctx: ^PluginContext, root: ^UINode)
 find_node_by_id :: proc(ctx: ^PluginContext, id: ElementID) -> ^UINode
 attach_to_container :: proc(ctx: ^PluginContext, container_id: string, node: ^UINode) -> bool
+
+// API convenience wrappers - High-Level Components
+create_tab_container :: proc(ctx: ^PluginContext, parent_id: ElementID, tabs: []TabInfo) -> ComponentID
+tab_container_select_tab :: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool
+tab_container_add_tab :: proc(ctx: ^PluginContext, id: ComponentID, tab: TabInfo) -> bool
+tab_container_remove_tab :: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool
+tab_container_get_active :: proc(ctx: ^PluginContext, id: ComponentID) -> int
+
+// API convenience wrappers - Shortcuts
 register_shortcut :: proc(ctx: ^PluginContext, key: i32, modifiers: KeyModifier, event_name: string) -> bool
 unregister_shortcuts :: proc(ctx: ^PluginContext)
+
+// API convenience wrappers - Platform
 show_folder_dialog :: proc(ctx: ^PluginContext, default_location: string = "")
 ```
 

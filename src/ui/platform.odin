@@ -16,10 +16,7 @@ PlatformAPI :: struct {
 }
 
 // Initialize Platform API
-init_platform_api :: proc(
-	window: ^sdl.Window,
-	allocator := context.allocator,
-) -> ^PlatformAPI {
+init_platform_api :: proc(window: ^sdl.Window, allocator := context.allocator) -> ^PlatformAPI {
 	if window == nil do return nil
 
 	api := new(PlatformAPI, allocator)

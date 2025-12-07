@@ -24,6 +24,9 @@ EventType :: enum {
 	Buffer_Save,
 	Cursor_Move,
 
+	// Component Events
+	Component_Tab_Changed, // Emitted when a tab is selected in a TabContainer
+
 	// Custom/String based for loose coupling
 	Custom_Signal,
 }
@@ -59,6 +62,7 @@ EventPayload :: union {
 	EventPayload_File,
 	EventPayload_Custom,
 	EventPayload_WorkingDirectory,
+	EventPayload_TabChanged,
 }
 
 // Event struct - Represents an event in the system
@@ -87,17 +91,17 @@ LayoutDirection :: enum {
 // Cursor types for UI elements
 CursorType :: enum {
 	Default, // Default arrow cursor
-	Hand,    // Hand/pointer cursor (for clickable items)
-	Text,    // Text selection cursor (I-beam)
-	Resize,  // Resize cursor
+	Hand, // Hand/pointer cursor (for clickable items)
+	Text, // Text selection cursor (I-beam)
+	Resize, // Resize cursor
 }
 
 // Sizing with explicit units
 SizingUnit :: enum {
-	Pixels,  // Fixed pixel value
+	Pixels, // Fixed pixel value
 	Percent, // Percentage (0.0-1.0 range, where 1.0 = 100%)
-	Grow,    // Grow to fill available space
-	Fit,     // Fit to content size
+	Grow, // Grow to fill available space
+	Fit, // Fit to content size
 }
 
 Sizing :: struct {
@@ -120,6 +124,7 @@ Style :: struct {
 	layout_dir:      LayoutDirection,
 	clip_vertical:   bool, // Enable vertical clipping (for scrollable containers)
 	clip_horizontal: bool, // Enable horizontal clipping
+	hidden:          bool, // If true, this element and its children are not rendered
 }
 
 // UINode - Represents a node in the UI DOM tree
@@ -147,6 +152,32 @@ ComponentType :: enum {
 	Checkbox,
 	Input,
 	Label,
+	TabContainer,
+}
+
+// =============================================================================
+// High-Level Component Types
+// =============================================================================
+
+// ComponentID - Unique identifier for high-level components
+// This is separate from ElementID (Clay/UINode IDs) and is auto-generated
+ComponentID :: distinct u64
+
+// Invalid component ID constant
+INVALID_COMPONENT_ID :: ComponentID(0)
+
+// TabInfo - Configuration for a single tab in a TabContainer
+TabInfo :: struct {
+	title:                string, // Display title for the tab
+	content_container_id: string, // ElementID for the content container (plugins attach content here)
+}
+
+// Component event payload for tab changes
+EventPayload_TabChanged :: struct {
+	component_id: ComponentID, // The tab container component
+	old_index:    int, // Previous active tab index (-1 if none)
+	new_index:    int, // New active tab index
+	tab_id:       string, // The content_container_id of the newly selected tab
 }
 
 // =============================================================================
@@ -196,12 +227,12 @@ PluginVTable :: struct {
 KeyModifierFlag :: enum {
 	// Windows/Linux modifiers
 	Ctrl, // Control key on Windows/Linux
-	Alt,  // Alt key on Windows/Linux
+	Alt, // Alt key on Windows/Linux
 	Meta, // Windows key on Windows/Linux
 
 	// macOS modifiers
-	Cmd,     // Command key on macOS (⌘)
-	Opt,     // Option key on macOS (⌥)
+	Cmd, // Command key on macOS (⌘)
+	Opt, // Option key on macOS (⌥)
 	CtrlMac, // Control key on macOS (⌃)
 
 	// Shared
@@ -219,22 +250,48 @@ KeyModifier :: bit_set[KeyModifierFlag]
 // Plugins receive a pointer to this struct in their PluginContext
 VesslAPI :: struct {
 	// Event System
-	emit_event:              proc(ctx: ^PluginContext, type: EventType, payload: EventPayload) -> (^Event, bool),
-	dispatch_event:          proc(ctx: ^PluginContext, event: ^Event) -> bool,
+	emit_event:               proc(
+		ctx: ^PluginContext,
+		type: EventType,
+		payload: EventPayload,
+	) -> (
+		^Event,
+		bool,
+	),
+	dispatch_event:           proc(ctx: ^PluginContext, event: ^Event) -> bool,
 
 	// UI System
-	set_root_node:           proc(ctx: ^PluginContext, root: ^UINode),
-	find_node_by_id:         proc(ctx: ^PluginContext, id: ElementID) -> ^UINode,
-	attach_to_container:     proc(ctx: ^PluginContext, container_id: string, node: ^UINode) -> bool,
+	set_root_node:            proc(ctx: ^PluginContext, root: ^UINode),
+	find_node_by_id:          proc(ctx: ^PluginContext, id: ElementID) -> ^UINode,
+	attach_to_container:      proc(
+		ctx: ^PluginContext,
+		container_id: string,
+		node: ^UINode,
+	) -> bool,
+
+	// High-Level Components - Tab Container
+	create_tab_container:     proc(
+		ctx: ^PluginContext,
+		parent_id: ElementID,
+		tabs: []TabInfo,
+	) -> ComponentID,
+	tab_container_select_tab: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool,
+	tab_container_add_tab:    proc(ctx: ^PluginContext, id: ComponentID, tab: TabInfo) -> bool,
+	tab_container_remove_tab: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool,
+	tab_container_get_active: proc(ctx: ^PluginContext, id: ComponentID) -> int,
 
 	// Keyboard Shortcuts
-	register_shortcut:       proc(ctx: ^PluginContext, key: i32, modifiers: KeyModifier, event_name: string) -> bool,
-	unregister_shortcuts:    proc(ctx: ^PluginContext),
+	register_shortcut:        proc(
+		ctx: ^PluginContext,
+		key: i32,
+		modifiers: KeyModifier,
+		event_name: string,
+	) -> bool,
+	unregister_shortcuts:     proc(ctx: ^PluginContext),
 
 	// Platform Features
-	show_folder_dialog:      proc(ctx: ^PluginContext, default_location: string),
+	show_folder_dialog:       proc(ctx: ^PluginContext, default_location: string),
 
 	// Internal pointers (opaque to plugins, used by API implementation)
-	_internal:               rawptr,
+	_internal:                rawptr,
 }
-

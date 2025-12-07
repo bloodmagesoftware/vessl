@@ -132,7 +132,14 @@ emit_event :: proc(bus: ^EventBus, event: ^Event) -> bool {
 }
 
 // Helper to create and emit an event (uses arena allocator)
-emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: EventPayload) -> (^Event, bool) {
+emit_event_typed :: proc(
+	bus: ^EventBus,
+	type: EventType,
+	payload: EventPayload,
+) -> (
+	^Event,
+	bool,
+) {
 	if bus == nil do return nil, false
 
 	// Allocate event from arena

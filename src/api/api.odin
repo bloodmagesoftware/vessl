@@ -45,6 +45,7 @@ create_node :: proc(id: ElementID, type: ElementType, allocator := context.alloc
 		layout_dir      = .TopDown,
 		clip_vertical   = false,
 		clip_horizontal = false,
+		hidden          = false, // Visible by default
 	}
 	node.cursor = .Default // Default cursor
 	return node
@@ -136,7 +137,12 @@ attach_to_container :: proc(ctx: ^PluginContext, container_id: string, node: ^UI
 }
 
 // Register a keyboard shortcut
-register_shortcut :: proc(ctx: ^PluginContext, key: i32, modifiers: KeyModifier, event_name: string) -> bool {
+register_shortcut :: proc(
+	ctx: ^PluginContext,
+	key: i32,
+	modifiers: KeyModifier,
+	event_name: string,
+) -> bool {
 	if ctx == nil || ctx.api == nil || ctx.api.register_shortcut == nil do return false
 	return ctx.api.register_shortcut(ctx, key, modifiers, event_name)
 }
@@ -153,3 +159,47 @@ show_folder_dialog :: proc(ctx: ^PluginContext, default_location: string = "") {
 	ctx.api.show_folder_dialog(ctx, default_location)
 }
 
+// =============================================================================
+// High-Level Component API Wrappers
+// =============================================================================
+
+// Create a tab container component
+// parent_id: The ElementID of the parent container to attach to
+// tabs: Array of TabInfo describing each tab (title and content container ID)
+// Returns: ComponentID for interacting with the component, or INVALID_COMPONENT_ID on failure
+create_tab_container :: proc(
+	ctx: ^PluginContext,
+	parent_id: ElementID,
+	tabs: []TabInfo,
+) -> ComponentID {
+	if ctx == nil || ctx.api == nil || ctx.api.create_tab_container == nil do return INVALID_COMPONENT_ID
+	return ctx.api.create_tab_container(ctx, parent_id, tabs)
+}
+
+// Select a tab in a tab container by index
+// Returns true if successful, false if component not found or index out of range
+tab_container_select_tab :: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool {
+	if ctx == nil || ctx.api == nil || ctx.api.tab_container_select_tab == nil do return false
+	return ctx.api.tab_container_select_tab(ctx, id, index)
+}
+
+// Add a new tab to a tab container
+// Returns true if successful
+tab_container_add_tab :: proc(ctx: ^PluginContext, id: ComponentID, tab: TabInfo) -> bool {
+	if ctx == nil || ctx.api == nil || ctx.api.tab_container_add_tab == nil do return false
+	return ctx.api.tab_container_add_tab(ctx, id, tab)
+}
+
+// Remove a tab from a tab container by index
+// Returns true if successful
+tab_container_remove_tab :: proc(ctx: ^PluginContext, id: ComponentID, index: int) -> bool {
+	if ctx == nil || ctx.api == nil || ctx.api.tab_container_remove_tab == nil do return false
+	return ctx.api.tab_container_remove_tab(ctx, id, index)
+}
+
+// Get the currently active tab index
+// Returns -1 if component not found or no active tab
+tab_container_get_active :: proc(ctx: ^PluginContext, id: ComponentID) -> int {
+	if ctx == nil || ctx.api == nil || ctx.api.tab_container_get_active == nil do return -1
+	return ctx.api.tab_container_get_active(ctx, id)
+}

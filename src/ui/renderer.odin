@@ -1,7 +1,7 @@
 package ui
 
-import api "../api"
 import clay "../../vendor/clay-odin"
+import api "../api"
 import win "../core"
 import "base:runtime"
 import "core:c"
@@ -268,6 +268,9 @@ find_clicked_node_clay :: proc(ctx: ^RendererContext, root: ^api.UINode) -> ^api
 find_clicked_node_recursive :: proc(ctx: ^RendererContext, node: ^api.UINode) -> ^api.UINode {
 	if node == nil do return nil
 
+	// Skip hidden nodes
+	if node.style.hidden do return nil
+
 	// Convert node ID to Clay ElementId
 	node_id_str := string(node.id)
 	clay_id := clay.GetElementId(clay.MakeString(node_id_str))
@@ -365,6 +368,9 @@ render_frame :: proc(
 check_hovered_clickable :: proc(ctx: ^RendererContext, node: ^api.UINode) -> bool {
 	if node == nil do return false
 
+	// Skip hidden nodes
+	if node.style.hidden do return false
+
 	// Check if this node is clickable and hovered
 	if node.on_click != nil {
 		node_id_str := string(node.id)
@@ -388,6 +394,9 @@ check_hovered_clickable :: proc(ctx: ^RendererContext, node: ^api.UINode) -> boo
 // Returns the cursor type of the topmost hovered node (prefers children over parents)
 find_hovered_cursor :: proc(ctx: ^RendererContext, node: ^api.UINode) -> api.CursorType {
 	if node == nil || ctx == nil || ctx.clay_ctx == nil do return .Default
+
+	// Skip hidden nodes
+	if node.style.hidden do return .Default
 
 	clay.SetCurrentContext(ctx.clay_ctx)
 
@@ -429,6 +438,9 @@ convert_sizing :: proc(sizing: api.Sizing) -> clay.SizingAxis {
 // check_hover: if true, check hover state and adjust colors (must be called after layout)
 build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: bool = false) {
 	if node == nil do return
+
+	// Skip hidden nodes and their children
+	if node.style.hidden do return
 
 	// Convert layout direction
 	layout_dir: clay.LayoutDirection = .TopToBottom

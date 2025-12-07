@@ -6,9 +6,10 @@ import "core:mem"
 
 // Plugin state
 VSCodeDefaultState :: struct {
-	root_node:  ^api.UINode,
-	containers: map[string]^api.UINode, // Map container ID to node
-	allocator:  mem.Allocator,
+	root_node:        ^api.UINode,
+	containers:       map[string]^api.UINode, // Map container ID to node
+	tab_container_id: api.ComponentID, // The editor tabs component
+	allocator:        mem.Allocator,
 }
 
 // Initialize the plugin
@@ -38,7 +39,11 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	api.add_child(root, top_bar)
 
 	// Horizontal stack - full width, grows height
-	horizontal_stack := api.create_node(api.ElementID("horizontal_stack"), .Container, ctx.allocator)
+	horizontal_stack := api.create_node(
+		api.ElementID("horizontal_stack"),
+		.Container,
+		ctx.allocator,
+	)
 	horizontal_stack.style.width = api.SIZE_FULL // Full window width
 	horizontal_stack.style.height = api.sizing_grow() // Grows to fill remaining space
 	horizontal_stack.style.color = {0.1, 0.1, 0.1, 1.0} // Dark background
@@ -54,7 +59,7 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	api.add_child(horizontal_stack, sidebar_left)
 	state.containers["sidebar_left"] = sidebar_left
 
-	// Text buffer/editor - grows width and height
+	// Editor area container - grows width and height (will hold tab container)
 	editor_main := api.create_node(api.ElementID("editor_main"), .Container, ctx.allocator)
 	editor_main.style.width = api.sizing_grow() // Grows to fill remaining width
 	editor_main.style.height = api.sizing_grow() // Grows to fill height
@@ -72,8 +77,48 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	api.add_child(root, status_bar)
 	state.containers["status_bar"] = status_bar
 
-	// Set root node via API
+	// Set root node via API - MUST be done before creating high-level components
+	// so they can find containers in the UI tree
 	api.set_root_node(ctx, root)
+
+	// Create tab container with three tabs (foo, bar, baz)
+	tabs := []api.TabInfo {
+		{title = "foo", content_container_id = "tab_content_foo"},
+		{title = "bar", content_container_id = "tab_content_bar"},
+		{title = "baz", content_container_id = "tab_content_baz"},
+	}
+	tab_component_id := api.create_tab_container(ctx, api.ElementID("editor_main"), tabs)
+	if tab_component_id != api.INVALID_COMPONENT_ID {
+		state.tab_container_id = tab_component_id
+		fmt.printf("[vscode_default] Created tab container with ID %d\n", u64(tab_component_id))
+
+		// Add sample content to each tab
+		// Foo tab content
+		foo_text := api.create_node(api.ElementID("foo_content_text"), .Text, ctx.allocator)
+		foo_text.text_content = "This is the FOO tab content"
+		foo_text.style.color = {0.9, 0.7, 0.3, 1.0} // Orange text
+		foo_text.style.width = api.sizing_fit()
+		foo_text.style.height = api.sizing_fit()
+		api.attach_to_container(ctx, "tab_content_foo", foo_text)
+
+		// Bar tab content
+		bar_text := api.create_node(api.ElementID("bar_content_text"), .Text, ctx.allocator)
+		bar_text.text_content = "This is the BAR tab content"
+		bar_text.style.color = {0.3, 0.9, 0.5, 1.0} // Green text
+		bar_text.style.width = api.sizing_fit()
+		bar_text.style.height = api.sizing_fit()
+		api.attach_to_container(ctx, "tab_content_bar", bar_text)
+
+		// Baz tab content
+		baz_text := api.create_node(api.ElementID("baz_content_text"), .Text, ctx.allocator)
+		baz_text.text_content = "This is the BAZ tab content"
+		baz_text.style.color = {0.5, 0.6, 0.9, 1.0} // Blue text
+		baz_text.style.width = api.sizing_fit()
+		baz_text.style.height = api.sizing_fit()
+		api.attach_to_container(ctx, "tab_content_baz", baz_text)
+	} else {
+		fmt.eprintln("[vscode_default] Failed to create tab container")
+	}
 
 	// Register keyboard shortcuts via API
 	// On macOS, users expect Cmd+O, on Windows/Linux users expect Ctrl+O

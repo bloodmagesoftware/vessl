@@ -94,6 +94,14 @@ main :: proc() {
 	}
 	defer ui.destroy_platform_api(platform_api_ptr)
 
+	// Initialize Component Registry (for high-level UI components)
+	component_registry := ui.init_component_registry(ui_api_ptr)
+	if component_registry == nil {
+		fmt.eprintln("Failed to initialize Component Registry")
+		return
+	}
+	defer ui.destroy_component_registry(component_registry)
+
 	// Initialize VesslAPI - the main API interface for plugins
 	vessl_api := init_vessl_api(
 		eventbus,
@@ -101,6 +109,7 @@ main :: proc() {
 		shortcut_registry,
 		ui_api_ptr,
 		platform_api_ptr,
+		component_registry,
 	)
 	if vessl_api == nil {
 		fmt.eprintln("Failed to initialize VesslAPI")
