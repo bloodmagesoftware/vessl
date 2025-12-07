@@ -467,6 +467,8 @@ my_plugin_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 }
 ```
 
+**Event Priority**: Plugins receive events in priority order. When registering a plugin, you can set a `priority` value (default is `0`). Higher priority plugins receive events first and can consume them before lower priority plugins see them. The default priority of `0` is recommended for most plugins. If you need to change the priority, it is recommended to stay within the range of `10` to `-10`.
+
 ### 7. Sizing UI Elements
 
 Use the flexible sizing system:
@@ -794,6 +796,8 @@ my_plugin_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 8. **String Cloning**: Clone strings when storing them in persistent data structures (plugin IDs, file paths, etc.).
 
 9. **Platform Shortcuts**: Always register both `Ctrl` (Windows/Linux) and `Cmd` (macOS) variants for shortcuts.
+
+10. **Plugin Priority**: The default priority is `0` and is recommended for most plugins. Plugins with higher priority values receive events first and can consume them before lower priority plugins. If you need to change the priority, it is recommended to stay within the range of `10` to `-10`. Set the `priority` field when creating your plugin struct before registration.
 
 ## Plugin Types
 

@@ -121,6 +121,7 @@ main :: proc() {
 	vscode_plugin := new(core.Plugin)
 	vscode_plugin.id = "builtin:vscode_default"
 	vscode_plugin.vtable = vscode_default.get_vtable()
+	vscode_plugin.priority = 0 // Default priority
 	vscode_plugin.user_data = nil
 
 	handle := core.register_plugin(plugin_registry, vscode_plugin)
@@ -139,6 +140,7 @@ main :: proc() {
 	filetree_plugin := new(core.Plugin)
 	filetree_plugin.id = "builtin:filetree"
 	filetree_plugin.vtable = filetree.get_vtable()
+	filetree_plugin.priority = 10 // Higher priority to consume file events first
 	filetree_plugin.user_data = nil
 
 	filetree_handle := core.register_plugin(plugin_registry, filetree_plugin)
