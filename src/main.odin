@@ -15,6 +15,23 @@ import vscode_default "plugins/vscode_default"
 import "ui"
 import sdl "vendor:sdl3"
 
+// Convert SDL mouse button to API MouseButton
+sdl_button_to_mouse_button :: proc(sdl_button: u8) -> api.MouseButton {
+	switch sdl_button {
+	case 1:
+		return .Left
+	case 2:
+		return .Middle
+	case 3:
+		return .Right
+	case 4:
+		return .X1
+	case 5:
+		return .X2
+	}
+	return .Left // Default to left button
+}
+
 // Set cursor based on cursor type
 set_cursor_for_type :: proc(window: ^sdl.Window, cursor_type: api.CursorType) {
 	if window == nil do return
@@ -235,6 +252,8 @@ main :: proc() {
 	// Mouse state tracking
 	mouse_x: f32 = 0
 	mouse_y: f32 = 0
+	prev_mouse_x: f32 = 0
+	prev_mouse_y: f32 = 0
 	mouse_down := false
 	mouse_click_this_frame := false
 
@@ -301,8 +320,35 @@ main :: proc() {
 
 			case .MOUSE_MOTION:
 				// Update mouse position
+				prev_mouse_x = mouse_x
+				prev_mouse_y = mouse_y
 				mouse_x = f32(event.motion.x)
 				mouse_y = f32(event.motion.y)
+
+				// Calculate delta in window coordinates
+				delta_x := mouse_x - prev_mouse_x
+				delta_y := mouse_y - prev_mouse_y
+
+				// Scale coordinates to renderer space (for high DPI displays)
+				render_width, render_height := win.get_renderer_output_size(window_ctx)
+				scale_x := f32(render_width) / f32(window_ctx.width)
+				scale_y := f32(render_height) / f32(window_ctx.height)
+
+				// Emit Mouse_Move event with scaled coordinates
+				mouse_move_payload := core.EventPayload_MouseMove {
+					delta_x = delta_x * scale_x,
+					delta_y = delta_y * scale_y,
+					x       = mouse_x * scale_x,
+					y       = mouse_y * scale_y,
+				}
+				mouse_move_event, _ := core.emit_event_typed(
+					eventbus,
+					.Mouse_Move,
+					mouse_move_payload,
+				)
+				if mouse_move_event != nil {
+					core.dispatch_event_to_plugins(plugin_registry, mouse_move_event)
+				}
 
 				// Mouse movement: Request immediate frame update
 				// For simple UI, we just request 1 frame.
@@ -319,6 +365,33 @@ main :: proc() {
 				mouse_down = true
 				mouse_click_this_frame = true
 
+				// Scale coordinates to renderer space (for high DPI displays)
+				render_width, render_height := win.get_renderer_output_size(window_ctx)
+				scale_x := f32(render_width) / f32(window_ctx.width)
+				scale_y := f32(render_height) / f32(window_ctx.height)
+				render_mouse_x := mouse_x * scale_x
+				render_mouse_y := mouse_y * scale_y
+
+				// Find the element under the mouse (need to update pointer state first)
+				ui.update_pointer_state(renderer_ctx, render_mouse_x, render_mouse_y, mouse_down)
+				hovered_element := ui.find_hovered_element_id(renderer_ctx)
+
+				// Emit Mouse_Down event with scaled coordinates
+				mouse_down_payload := core.EventPayload_MouseDown {
+					element_id = hovered_element,
+					button     = sdl_button_to_mouse_button(event.button.button),
+					x          = render_mouse_x,
+					y          = render_mouse_y,
+				}
+				mouse_down_event, _ := core.emit_event_typed(
+					eventbus,
+					.Mouse_Down,
+					mouse_down_payload,
+				)
+				if mouse_down_event != nil {
+					core.dispatch_event_to_plugins(plugin_registry, mouse_down_event)
+				}
+
 				// Request immediate render
 				sync.mutex_lock(&render_required_mutex)
 				render_required = true
@@ -330,6 +403,29 @@ main :: proc() {
 				mouse_x = f32(event.button.x)
 				mouse_y = f32(event.button.y)
 				mouse_down = false
+
+				// Scale coordinates to renderer space (for high DPI displays)
+				render_width, render_height := win.get_renderer_output_size(window_ctx)
+				scale_x := f32(render_width) / f32(window_ctx.width)
+				scale_y := f32(render_height) / f32(window_ctx.height)
+				render_mouse_x := mouse_x * scale_x
+				render_mouse_y := mouse_y * scale_y
+
+				// Find the element under the mouse (need to update pointer state first)
+				ui.update_pointer_state(renderer_ctx, render_mouse_x, render_mouse_y, mouse_down)
+				hovered_element := ui.find_hovered_element_id(renderer_ctx)
+
+				// Emit Mouse_Up event with scaled coordinates
+				mouse_up_payload := core.EventPayload_MouseUp {
+					element_id = hovered_element,
+					button     = sdl_button_to_mouse_button(event.button.button),
+					x          = render_mouse_x,
+					y          = render_mouse_y,
+				}
+				mouse_up_event, _ := core.emit_event_typed(eventbus, .Mouse_Up, mouse_up_payload)
+				if mouse_up_event != nil {
+					core.dispatch_event_to_plugins(plugin_registry, mouse_up_event)
+				}
 
 				// Request immediate render
 				sync.mutex_lock(&render_required_mutex)

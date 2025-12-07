@@ -467,6 +467,68 @@ my_plugin_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 }
 ```
 
+### 6a. Handling Mouse Events
+
+Mouse events provide information about mouse interactions. Three types of mouse events are available:
+
+- **`Mouse_Down`**: Emitted when a mouse button is pressed
+- **`Mouse_Up`**: Emitted when a mouse button is released
+- **`Mouse_Move`**: Emitted when the mouse moves (provides delta movement)
+
+```odin
+my_plugin_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
+    state := cast(^MyPluginState)ctx.user_data
+    if state == nil do return false
+
+    #partial switch event.type {
+    case .Mouse_Down:
+        #partial switch payload in event.payload {
+        case api.EventPayload_MouseDown:
+            // payload.element_id - ElementID of the element under the mouse (empty if none)
+            // payload.button - Which button was pressed (.Left, .Middle, .Right, .X1, .X2)
+            // payload.x, payload.y - Mouse position in window coordinates
+            if payload.button == .Left {
+                // Handle left click
+                fmt.printf("Left click at (%f, %f) on element: %s\n", 
+                    payload.x, payload.y, string(payload.element_id))
+            }
+            return false // Don't consume, let other plugins see it
+        }
+    
+    case .Mouse_Up:
+        #partial switch payload in event.payload {
+        case api.EventPayload_MouseUp:
+            // Same fields as Mouse_Down
+            if payload.button == .Left {
+                // Handle left button release
+            }
+            return false
+        }
+    
+    case .Mouse_Move:
+        #partial switch payload in event.payload {
+        case api.EventPayload_MouseMove:
+            // payload.delta_x, payload.delta_y - Movement since last frame
+            // payload.x, payload.y - Current mouse position
+            if state.is_dragging {
+                // Use delta for dragging operations
+                state.drag_offset_x += payload.delta_x
+                state.drag_offset_y += payload.delta_y
+            }
+            return false
+        }
+    }
+    return false
+}
+```
+
+**MouseButton enum values:**
+- `.Left` - Left mouse button (button 1)
+- `.Middle` - Middle mouse button (button 2)
+- `.Right` - Right mouse button (button 3)
+- `.X1` - Extra button 1 (button 4)
+- `.X2` - Extra button 2 (button 5)
+
 **Event Priority**: Plugins receive events in priority order. When registering a plugin, you can set a `priority` value (default is `0`). Higher priority plugins receive events first and can consume them before lower priority plugins see them. The default priority of `0` is recommended for most plugins. If you need to change the priority, it is recommended to stay within the range of `10` to `-10`.
 
 ### 7. Sizing UI Elements
@@ -824,6 +886,9 @@ Utility plugins may not have UI but provide services through events (e.g., a git
 - **`Buffer_Open`**: Emitted when a file should be opened
 - **`Buffer_Save`**: Emitted when a buffer should be saved
 - **`Cursor_Move`**: Emitted when the cursor moves in an editor
+- **`Mouse_Down`**: Emitted when a mouse button is pressed (payload: `EventPayload_MouseDown`)
+- **`Mouse_Up`**: Emitted when a mouse button is released (payload: `EventPayload_MouseUp`)
+- **`Mouse_Move`**: Emitted when the mouse moves (payload: `EventPayload_MouseMove`)
 - **`Component_Tab_Changed`**: Emitted when a tab is selected in a TabContainer (payload: `EventPayload_TabChanged`)
 - **`Custom_Signal`**: For custom plugin-to-plugin communication (including keyboard shortcuts)
 
@@ -833,9 +898,15 @@ Utility plugins may not have UI but provide services through events (e.g., a git
 
 ```odin
 // Events
-EventType :: enum { ..., Component_Tab_Changed, ... }
+EventType :: enum { ..., Mouse_Down, Mouse_Up, Mouse_Move, Component_Tab_Changed, ... }
 Event :: struct { type: EventType, handled: bool, payload: EventPayload }
-EventPayload :: union { EventPayload_Layout, EventPayload_Buffer, EventPayload_TabChanged, ... }
+EventPayload :: union { EventPayload_Layout, EventPayload_Buffer, EventPayload_TabChanged, EventPayload_MouseDown, EventPayload_MouseUp, EventPayload_MouseMove, ... }
+
+// Mouse Events
+MouseButton :: enum { Left, Middle, Right, X1, X2 }
+EventPayload_MouseDown :: struct { element_id: ElementID, button: MouseButton, x: f32, y: f32 }
+EventPayload_MouseUp :: struct { element_id: ElementID, button: MouseButton, x: f32, y: f32 }
+EventPayload_MouseMove :: struct { delta_x: f32, delta_y: f32, x: f32, y: f32 }
 
 // UI
 ElementID :: distinct string

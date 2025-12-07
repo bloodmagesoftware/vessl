@@ -25,6 +25,11 @@ EventType :: enum {
 	Buffer_Save,
 	Cursor_Move,
 
+	// Mouse Events
+	Mouse_Down, // Mouse button pressed (provides element under mouse)
+	Mouse_Up, // Mouse button released (provides element under mouse)
+	Mouse_Move, // Mouse moved (provides movement delta)
+
 	// Component Events
 	Component_Tab_Changed, // Emitted when a tab is selected in a TabContainer
 
@@ -60,6 +65,36 @@ EventPayload_WorkingDirectory :: struct {
 	path: string, // The new working directory path
 }
 
+// Mouse button enum for mouse events
+MouseButton :: enum {
+	Left,
+	Middle,
+	Right,
+	X1, // Extra button 1
+	X2, // Extra button 2
+}
+
+EventPayload_MouseDown :: struct {
+	element_id: ElementID, // The element under the mouse (empty if none)
+	button:     MouseButton, // Which button was pressed
+	x:          f32, // Mouse x position in window coordinates
+	y:          f32, // Mouse y position in window coordinates
+}
+
+EventPayload_MouseUp :: struct {
+	element_id: ElementID, // The element under the mouse (empty if none)
+	button:     MouseButton, // Which button was released
+	x:          f32, // Mouse x position in window coordinates
+	y:          f32, // Mouse y position in window coordinates
+}
+
+EventPayload_MouseMove :: struct {
+	delta_x: f32, // Movement delta in x direction
+	delta_y: f32, // Movement delta in y direction
+	x:       f32, // Current mouse x position in window coordinates
+	y:       f32, // Current mouse y position in window coordinates
+}
+
 // Event Payload Union - All possible payloads
 EventPayload :: union {
 	EventPayload_Layout,
@@ -69,6 +104,9 @@ EventPayload :: union {
 	EventPayload_Custom,
 	EventPayload_WorkingDirectory,
 	EventPayload_TabChanged,
+	EventPayload_MouseDown,
+	EventPayload_MouseUp,
+	EventPayload_MouseMove,
 }
 
 // Event struct - Represents an event in the system

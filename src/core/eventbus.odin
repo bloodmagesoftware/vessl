@@ -17,6 +17,10 @@ EventPayload_EditorAttach :: api.EventPayload_EditorAttach
 EventPayload_File :: api.EventPayload_File
 EventPayload_Custom :: api.EventPayload_Custom
 EventPayload_WorkingDirectory :: api.EventPayload_WorkingDirectory
+EventPayload_MouseDown :: api.EventPayload_MouseDown
+EventPayload_MouseUp :: api.EventPayload_MouseUp
+EventPayload_MouseMove :: api.EventPayload_MouseMove
+MouseButton :: api.MouseButton
 
 // Event subscriber callback
 // Returns true if the event was handled (stops propagation)

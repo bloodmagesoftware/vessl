@@ -483,6 +483,43 @@ find_hovered_cursor :: proc(ctx: ^RendererContext, node: ^api.UINode) -> api.Cur
 	return .Default
 }
 
+// Find the hovered element ID
+// Returns the ElementID of the topmost hovered node (prefers children over parents)
+// Returns empty ElementID if no element is hovered
+find_hovered_element_id :: proc(ctx: ^RendererContext) -> api.ElementID {
+	if ctx == nil || ctx.clay_ctx == nil || ctx.root_node == nil do return api.ElementID("")
+
+	clay.SetCurrentContext(ctx.clay_ctx)
+	return find_hovered_element_id_recursive(ctx, ctx.root_node)
+}
+
+// Recursive helper to find hovered element ID
+find_hovered_element_id_recursive :: proc(
+	ctx: ^RendererContext,
+	node: ^api.UINode,
+) -> api.ElementID {
+	if node == nil do return api.ElementID("")
+
+	// Skip hidden nodes
+	if node.style.hidden do return api.ElementID("")
+
+	// Check children first (they're on top)
+	for child in node.children {
+		if id := find_hovered_element_id_recursive(ctx, child); id != api.ElementID("") {
+			return id
+		}
+	}
+
+	// Check if this node is hovered
+	node_id_str := string(node.id)
+	clay_id := clay.GetElementId(clay.MakeString(node_id_str))
+	if clay.PointerOver(clay_id) {
+		return node.id
+	}
+
+	return api.ElementID("")
+}
+
 // Convert UINode Sizing to Clay Sizing
 convert_sizing :: proc(sizing: api.Sizing) -> clay.SizingAxis {
 	switch sizing.unit {

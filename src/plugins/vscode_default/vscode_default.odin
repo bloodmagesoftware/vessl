@@ -4,11 +4,22 @@ import api "../../api"
 import "core:fmt"
 import "core:mem"
 
+// Resize constants
+SIDEBAR_MIN_WIDTH :: 150 // Minimum sidebar width in pixels
+SIDEBAR_MAX_WIDTH :: 800 // Maximum sidebar width in pixels
+SIDEBAR_DEFAULT_WIDTH :: 400 // Default sidebar width in pixels
+RESIZE_HANDLE_WIDTH :: 6 // Width of the resize handle in pixels
+
 // Plugin state
 VSCodeDefaultState :: struct {
-	root_node:  ^api.UINode,
-	containers: map[string]^api.UINode, // Map container ID to node
-	allocator:  mem.Allocator,
+	root_node:     ^api.UINode,
+	containers:    map[string]^api.UINode, // Map container ID to node
+	allocator:     mem.Allocator,
+	// Resize state
+	sidebar_node:  ^api.UINode, // Reference to sidebar for resizing
+	resize_handle: ^api.UINode, // The resize handle element
+	sidebar_width: f32, // Current sidebar width
+	is_resizing:   bool, // Whether we're currently resizing
 }
 
 // Initialize the plugin
@@ -49,14 +60,41 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	horizontal_stack.style.layout_dir = .LeftRight // Horizontal layout
 	api.add_child(root, horizontal_stack)
 
-	// Sidebar - fixed width, grows height
+	// Sidebar container (holds sidebar content + resize handle)
+	sidebar_container := api.create_node(
+		api.ElementID("sidebar_container"),
+		.Container,
+		ctx.allocator,
+	)
+	sidebar_container.style.width = api.sizing_px(SIDEBAR_DEFAULT_WIDTH)
+	sidebar_container.style.height = api.sizing_grow()
+	sidebar_container.style.color = {0.2, 0.2, 0.2, 1.0}
+	sidebar_container.style.layout_dir = .LeftRight // Horizontal: content + resize handle
+	api.add_child(horizontal_stack, sidebar_container)
+	state.sidebar_node = sidebar_container
+	state.sidebar_width = SIDEBAR_DEFAULT_WIDTH
+
+	// Sidebar content area - grows to fill, leaves room for resize handle
 	sidebar_left := api.create_node(api.ElementID("sidebar_left"), .Container, ctx.allocator)
-	sidebar_left.style.width = api.sizing_px(400) // Fixed 400px width
+	sidebar_left.style.width = api.sizing_grow() // Grows to fill (minus resize handle)
 	sidebar_left.style.height = api.sizing_grow() // Grows to fill height
 	sidebar_left.style.color = {0.2, 0.2, 0.2, 1.0} // Dark gray
 	sidebar_left.style.layout_dir = .TopDown
-	api.add_child(horizontal_stack, sidebar_left)
+	api.add_child(sidebar_container, sidebar_left)
 	state.containers["sidebar_left"] = sidebar_left
+
+	// Resize handle - thin vertical bar at right edge of sidebar
+	resize_handle := api.create_node(
+		api.ElementID("sidebar_resize_handle"),
+		.Container,
+		ctx.allocator,
+	)
+	resize_handle.style.width = api.sizing_px(RESIZE_HANDLE_WIDTH)
+	resize_handle.style.height = api.sizing_grow()
+	resize_handle.style.color = {0.15, 0.15, 0.15, 1.0} // Slightly darker than sidebar
+	resize_handle.cursor = .Resize // Show resize cursor on hover
+	api.add_child(sidebar_container, resize_handle)
+	state.resize_handle = resize_handle
 
 	// Editor area container - grows width and height (will hold tab container)
 	editor_main := api.create_node(api.ElementID("editor_main"), .Container, ctx.allocator)
@@ -126,6 +164,55 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 	if state == nil do return false
 
 	#partial switch event.type {
+	case .Mouse_Down:
+		// Check if mouse down is on the resize handle
+		#partial switch payload in event.payload {
+		case api.EventPayload_MouseDown:
+			if payload.element_id == api.ElementID("sidebar_resize_handle") &&
+			   payload.button == .Left {
+				state.is_resizing = true
+				return true // Consume the event
+			}
+		}
+		return false
+
+	case .Mouse_Up:
+		// Stop resizing on mouse up
+		#partial switch payload in event.payload {
+		case api.EventPayload_MouseUp:
+			if state.is_resizing && payload.button == .Left {
+				state.is_resizing = false
+				return true // Consume the event
+			}
+		}
+		return false
+
+	case .Mouse_Move:
+		// Handle resize dragging
+		#partial switch payload in event.payload {
+		case api.EventPayload_MouseMove:
+			if state.is_resizing {
+				// Update sidebar width based on mouse delta
+				new_width := state.sidebar_width + payload.delta_x
+
+				// Clamp to min/max values
+				if new_width < SIDEBAR_MIN_WIDTH {
+					new_width = SIDEBAR_MIN_WIDTH
+				} else if new_width > SIDEBAR_MAX_WIDTH {
+					new_width = SIDEBAR_MAX_WIDTH
+				}
+
+				// Update state and UI
+				state.sidebar_width = new_width
+				if state.sidebar_node != nil {
+					state.sidebar_node.style.width = api.sizing_px(int(new_width))
+				}
+
+				return true // Consume the event
+			}
+		}
+		return false
+
 	case .Custom_Signal:
 		// Handle keyboard shortcut events
 		#partial switch payload in event.payload {
