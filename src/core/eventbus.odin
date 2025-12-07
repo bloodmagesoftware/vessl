@@ -12,7 +12,8 @@ Event :: api.Event
 EventType :: api.EventType
 EventPayload :: api.EventPayload
 EventPayload_Layout :: api.EventPayload_Layout
-EventPayload_Buffer :: api.EventPayload_Buffer
+EventPayload_OpenFile :: api.EventPayload_OpenFile
+EventPayload_EditorAttach :: api.EventPayload_EditorAttach
 EventPayload_File :: api.EventPayload_File
 EventPayload_Custom :: api.EventPayload_Custom
 EventPayload_WorkingDirectory :: api.EventPayload_WorkingDirectory

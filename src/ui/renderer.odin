@@ -9,6 +9,7 @@ import "core:fmt"
 import "core:mem"
 import "core:strings"
 import sdl "vendor:sdl3"
+import img "vendor:sdl3/image"
 import ttf "vendor:sdl3/ttf"
 
 // Cache entry for text objects
@@ -17,6 +18,14 @@ TextCacheEntry :: struct {
 	text_content: string,
 	text_obj:     ^ttf.Text,
 	color:        [4]f32,
+}
+
+// Cache entry for images (maps file path to SDL texture)
+ImageCacheEntry :: struct {
+	path:    string,
+	texture: ^sdl.Texture,
+	width:   i32,
+	height:  i32,
 }
 
 RendererContext :: struct {
@@ -32,6 +41,7 @@ RendererContext :: struct {
 	font_size:     f32,
 	font_loaded:   bool,
 	text_cache:    [dynamic]TextCacheEntry, // Cache text objects to avoid recreating every frame
+	image_cache:   map[string]ImageCacheEntry, // Cache loaded image textures
 }
 
 // Clay text measurement function (required by Clay)
@@ -93,6 +103,7 @@ init_renderer :: proc(
 	ctx.font_loaded = false
 	ctx.font_size = 32.0 // Default font size (larger for readability)
 	ctx.text_cache = {}
+	ctx.image_cache = {}
 
 	// Initialize SDL_ttf
 	if !ttf.Init() {
@@ -231,6 +242,60 @@ load_default_font :: proc() -> (font: ^ttf.Font, ok: bool) {
 // Set the root UI node
 set_root_node :: proc(ctx: ^RendererContext, root: ^api.UINode) {
 	ctx.root_node = root
+}
+
+// Load an image from file path into a texture (cached)
+// Returns the cached entry or loads the image if not cached
+load_image_texture :: proc(
+	ctx: ^RendererContext,
+	path: string,
+) -> (
+	entry: ImageCacheEntry,
+	ok: bool,
+) {
+	if ctx == nil || ctx.window_ctx == nil || ctx.window_ctx.renderer == nil {
+		return {}, false
+	}
+
+	// Check cache first
+	if cached, found := ctx.image_cache[path]; found {
+		return cached, true
+	}
+
+	// Load image using SDL_image (supports PNG, JPEG, BMP, GIF, etc.)
+	path_cstr := strings.clone_to_cstring(path)
+	defer delete(path_cstr)
+
+	// Load the surface from file using SDL_image
+	surface := img.Load(path_cstr)
+	if surface == nil {
+		fmt.eprintf("[renderer] Failed to load image '%s': %s\n", path, sdl.GetError())
+		return {}, false
+	}
+	defer sdl.DestroySurface(surface)
+
+	// Get image dimensions
+	img_width := surface.w
+	img_height := surface.h
+
+	// Create texture from surface
+	texture := sdl.CreateTextureFromSurface(ctx.window_ctx.renderer, surface)
+	if texture == nil {
+		fmt.eprintf("[renderer] Failed to create texture for '%s': %s\n", path, sdl.GetError())
+		return {}, false
+	}
+
+	// Cache the entry
+	cache_entry := ImageCacheEntry {
+		path    = strings.clone(path),
+		texture = texture,
+		width   = img_width,
+		height  = img_height,
+	}
+	ctx.image_cache[path] = cache_entry
+
+	fmt.printf("[renderer] Loaded image '%s' (%dx%d)\n", path, img_width, img_height)
+	return cache_entry, true
 }
 
 // Update renderer size (call this when window is resized)
@@ -542,6 +607,26 @@ build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: boo
 			// Use TextDynamic for runtime strings
 			clay.TextDynamic(node.text_content, text_config)
 		}
+
+	case .Image:
+		// Create image element
+		// Pass the image path pointer as imageData for the render command to use
+		image_config := clay.ElementDeclaration {
+			layout = {
+				sizing = {width = width_sizing, height = height_sizing},
+				padding = padding,
+				layoutDirection = layout_dir,
+			},
+			backgroundColor = bg_color,
+			image = {
+				imageData = rawptr(&node.image_path), // Pass pointer to image path
+			},
+		}
+
+		node_id_str := string(node.id)
+		if clay.UI(clay.ID(node_id_str))(image_config) {
+			// Images have no children
+		}
 	}
 }
 
@@ -670,7 +755,43 @@ process_render_commands :: proc(
 				sdl.RenderFillRect(ctx.window_ctx.renderer, &right_rect)
 			}
 
-		case .None, .Image, .ScissorStart, .ScissorEnd, .Custom:
+		case .Image:
+			// Render image using cached texture
+			box := cmd.boundingBox
+			image_data := cmd.renderData.image
+
+			// imageData contains a pointer to the image path string
+			if image_data.imageData != nil {
+				path_ptr := cast(^string)image_data.imageData
+				if path_ptr != nil && len(path_ptr^) > 0 {
+					// Load or get cached texture
+					if entry, ok := load_image_texture(ctx, path_ptr^); ok {
+						// Calculate destination rect (fit image in bounding box while preserving aspect ratio)
+						src_aspect := f32(entry.width) / f32(entry.height)
+						dst_aspect := box.width / box.height
+
+						dst_rect: sdl.FRect
+						if src_aspect > dst_aspect {
+							// Image is wider than box, fit to width
+							dst_rect.w = box.width
+							dst_rect.h = box.width / src_aspect
+							dst_rect.x = box.x
+							dst_rect.y = box.y + (box.height - dst_rect.h) / 2
+						} else {
+							// Image is taller than box, fit to height
+							dst_rect.h = box.height
+							dst_rect.w = box.height * src_aspect
+							dst_rect.x = box.x + (box.width - dst_rect.w) / 2
+							dst_rect.y = box.y
+						}
+
+						// Render the texture
+						sdl.RenderTexture(ctx.window_ctx.renderer, entry.texture, nil, &dst_rect)
+					}
+				}
+			}
+
+		case .None, .ScissorStart, .ScissorEnd, .Custom:
 		// Unhandled command types - skip for now
 		}
 	}
@@ -892,6 +1013,15 @@ destroy_renderer :: proc(ctx: ^RendererContext) {
 		delete(entry.text_content)
 	}
 	delete(ctx.text_cache)
+
+	// Cleanup image cache
+	for path, entry in ctx.image_cache {
+		if entry.texture != nil {
+			sdl.DestroyTexture(entry.texture)
+		}
+		delete(entry.path)
+	}
+	delete(ctx.image_cache)
 
 	// Cleanup Text Engine
 	if ctx.text_engine != nil {

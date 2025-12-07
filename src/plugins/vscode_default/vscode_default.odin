@@ -6,10 +6,9 @@ import "core:mem"
 
 // Plugin state
 VSCodeDefaultState :: struct {
-	root_node:        ^api.UINode,
-	containers:       map[string]^api.UINode, // Map container ID to node
-	tab_container_id: api.ComponentID, // The editor tabs component
-	allocator:        mem.Allocator,
+	root_node:  ^api.UINode,
+	containers: map[string]^api.UINode, // Map container ID to node
+	allocator:  mem.Allocator,
 }
 
 // Initialize the plugin
@@ -81,44 +80,8 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	// so they can find containers in the UI tree
 	api.set_root_node(ctx, root)
 
-	// Create tab container with three tabs (foo, bar, baz)
-	tabs := []api.TabInfo {
-		{title = "foo", content_container_id = "tab_content_foo"},
-		{title = "bar", content_container_id = "tab_content_bar"},
-		{title = "baz", content_container_id = "tab_content_baz"},
-	}
-	tab_component_id := api.create_tab_container(ctx, api.ElementID("editor_main"), tabs)
-	if tab_component_id != api.INVALID_COMPONENT_ID {
-		state.tab_container_id = tab_component_id
-		fmt.printf("[vscode_default] Created tab container with ID %d\n", u64(tab_component_id))
-
-		// Add sample content to each tab
-		// Foo tab content
-		foo_text := api.create_node(api.ElementID("foo_content_text"), .Text, ctx.allocator)
-		foo_text.text_content = "This is the FOO tab content"
-		foo_text.style.color = {0.9, 0.7, 0.3, 1.0} // Orange text
-		foo_text.style.width = api.sizing_fit()
-		foo_text.style.height = api.sizing_fit()
-		api.attach_to_container(ctx, "tab_content_foo", foo_text)
-
-		// Bar tab content
-		bar_text := api.create_node(api.ElementID("bar_content_text"), .Text, ctx.allocator)
-		bar_text.text_content = "This is the BAR tab content"
-		bar_text.style.color = {0.3, 0.9, 0.5, 1.0} // Green text
-		bar_text.style.width = api.sizing_fit()
-		bar_text.style.height = api.sizing_fit()
-		api.attach_to_container(ctx, "tab_content_bar", bar_text)
-
-		// Baz tab content
-		baz_text := api.create_node(api.ElementID("baz_content_text"), .Text, ctx.allocator)
-		baz_text.text_content = "This is the BAZ tab content"
-		baz_text.style.color = {0.5, 0.6, 0.9, 1.0} // Blue text
-		baz_text.style.width = api.sizing_fit()
-		baz_text.style.height = api.sizing_fit()
-		api.attach_to_container(ctx, "tab_content_baz", baz_text)
-	} else {
-		fmt.eprintln("[vscode_default] Failed to create tab container")
-	}
+	// Note: Tab container is now created by the buffer_manager plugin
+	// when it receives the Layout_Container_Ready event
 
 	// Register keyboard shortcuts via API
 	// On macOS, users expect Cmd+O, on Windows/Linux users expect Ctrl+O
@@ -197,10 +160,10 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 			api.dispatch_event(ctx, sidebar_event)
 		}
 
-		// Editor main for buffer
+		// Editor main for buffer manager
 		layout_payload_editor := api.EventPayload_Layout {
 			container_id  = "editor_main",
-			target_plugin = "builtin:buffer",
+			target_plugin = "builtin:buffer_manager",
 		}
 		editor_event, _ := api.emit_event(ctx, .Layout_Container_Ready, layout_payload_editor)
 		if editor_event != nil {

@@ -406,7 +406,7 @@ build_filetree_ui :: proc(
 		file_path_clone := strings.clone(full_path, state.allocator)
 		state.file_entries[string(entry_id)] = file_path_clone
 
-		// Set click callback for file (emit Buffer_Open event)
+		// Set click callback for file (emit Request_Open_File event)
 		// Create a context struct to pass both state and path
 		file_callback_ctx := new(struct {
 				state: ^FiletreeState,
@@ -424,13 +424,20 @@ build_filetree_ui :: proc(
 
 			fmt.printf("[filetree] File clicked: %s\n", callback_ctx.path)
 
-			// Emit Buffer_Open event via API
+			// Emit Request_Open_File event via API and dispatch to plugins
 			if callback_ctx.state.ctx != nil {
-				buffer_payload := api.EventPayload_Buffer {
-					file_path = callback_ctx.path,
-					buffer_id = fmt.tprintf("buffer_%s", callback_ctx.path),
+				open_file_payload := api.EventPayload_OpenFile {
+					path = callback_ctx.path,
 				}
-				api.emit_event(callback_ctx.state.ctx, .Buffer_Open, buffer_payload)
+				// Note: emit_event returns (event, handled) - we only care about getting a valid event
+				event, _ := api.emit_event(
+					callback_ctx.state.ctx,
+					.Request_Open_File,
+					open_file_payload,
+				)
+				if event != nil {
+					api.dispatch_event(callback_ctx.state.ctx, event)
+				}
 			}
 		}
 

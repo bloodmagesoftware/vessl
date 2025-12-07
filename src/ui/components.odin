@@ -158,13 +158,14 @@ destroy_component :: proc(component: ^Component, allocator: mem.Allocator) {
 
 // Create a tab container component
 // Returns the ComponentID for the new component, or INVALID_COMPONENT_ID on failure
+// Note: tabs can be empty, tabs will be added later via tab_container_add_tab
 create_tab_container :: proc(
 	registry: ^ComponentRegistry,
 	plugin_ctx: ^api.PluginContext,
 	parent_id: api.ElementID,
 	tabs: []api.TabInfo,
 ) -> api.ComponentID {
-	if registry == nil || registry.ui_api == nil || len(tabs) == 0 do return api.INVALID_COMPONENT_ID
+	if registry == nil || registry.ui_api == nil do return api.INVALID_COMPONENT_ID
 
 	allocator := registry.allocator
 

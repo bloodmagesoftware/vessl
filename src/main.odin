@@ -7,7 +7,10 @@ import "core:fmt"
 import "core:mem"
 import "core:strings"
 import "core:sync"
+import buffer_manager "plugins/buffer_manager"
 import filetree "plugins/filetree"
+import image_viewer "plugins/image_viewer"
+import text_editor "plugins/text_editor"
 import vscode_default "plugins/vscode_default"
 import "ui"
 import sdl "vendor:sdl3"
@@ -152,6 +155,62 @@ main :: proc() {
 	// Initialize filetree plugin with VesslAPI
 	if !core.init_plugin(plugin_registry, "builtin:filetree", vessl_api) {
 		fmt.eprintln("Failed to initialize filetree plugin")
+		return
+	}
+
+	// Register and initialize buffer_manager plugin
+	buffer_manager_plugin := new(core.Plugin)
+	buffer_manager_plugin.id = "builtin:buffer_manager"
+	buffer_manager_plugin.vtable = buffer_manager.get_vtable()
+	buffer_manager_plugin.priority = 0 // Default priority
+	buffer_manager_plugin.user_data = nil
+
+	buffer_manager_handle := core.register_plugin(plugin_registry, buffer_manager_plugin)
+	if buffer_manager_handle == 0 {
+		fmt.eprintln("Failed to register buffer_manager plugin")
+		return
+	}
+
+	if !core.init_plugin(plugin_registry, "builtin:buffer_manager", vessl_api) {
+		fmt.eprintln("Failed to initialize buffer_manager plugin")
+		return
+	}
+
+	// Register and initialize image_viewer plugin
+	// Higher priority (10) so it handles image files before text_editor
+	image_viewer_plugin := new(core.Plugin)
+	image_viewer_plugin.id = "builtin:image_viewer"
+	image_viewer_plugin.vtable = image_viewer.get_vtable()
+	image_viewer_plugin.priority = 10 // High priority to handle images before text editor
+	image_viewer_plugin.user_data = nil
+
+	image_viewer_handle := core.register_plugin(plugin_registry, image_viewer_plugin)
+	if image_viewer_handle == 0 {
+		fmt.eprintln("Failed to register image_viewer plugin")
+		return
+	}
+
+	if !core.init_plugin(plugin_registry, "builtin:image_viewer", vessl_api) {
+		fmt.eprintln("Failed to initialize image_viewer plugin")
+		return
+	}
+
+	// Register and initialize text_editor plugin
+	// Default priority (0) so it acts as fallback for all other files
+	text_editor_plugin := new(core.Plugin)
+	text_editor_plugin.id = "builtin:text_editor"
+	text_editor_plugin.vtable = text_editor.get_vtable()
+	text_editor_plugin.priority = 0 // Default priority (catch-all fallback)
+	text_editor_plugin.user_data = nil
+
+	text_editor_handle := core.register_plugin(plugin_registry, text_editor_plugin)
+	if text_editor_handle == 0 {
+		fmt.eprintln("Failed to register text_editor plugin")
+		return
+	}
+
+	if !core.init_plugin(plugin_registry, "builtin:text_editor", vessl_api) {
+		fmt.eprintln("Failed to initialize text_editor plugin")
 		return
 	}
 

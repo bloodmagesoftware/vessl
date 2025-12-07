@@ -20,7 +20,8 @@ EventType :: enum {
 	Working_Directory_Changed, // Emitted when user selects a new working directory
 
 	// Editor Events
-	Buffer_Open,
+	Request_Open_File, // Request to open a file (emitted by file tree, handled by buffer manager)
+	Request_Editor_Attach, // Request for an editor plugin to attach to a container
 	Buffer_Save,
 	Cursor_Move,
 
@@ -37,9 +38,13 @@ EventPayload_Layout :: struct {
 	target_plugin: string, // "builtin:filetree", "builtin:terminal", etc.
 }
 
-EventPayload_Buffer :: struct {
-	file_path: string,
-	buffer_id: string,
+EventPayload_OpenFile :: struct {
+	path: string, // The file path to open
+}
+
+EventPayload_EditorAttach :: struct {
+	path:         string, // The file path being opened
+	container_id: string, // The container ID where the editor should attach
 }
 
 EventPayload_File :: struct {
@@ -58,7 +63,8 @@ EventPayload_WorkingDirectory :: struct {
 // Event Payload Union - All possible payloads
 EventPayload :: union {
 	EventPayload_Layout,
-	EventPayload_Buffer,
+	EventPayload_OpenFile,
+	EventPayload_EditorAttach,
 	EventPayload_File,
 	EventPayload_Custom,
 	EventPayload_WorkingDirectory,
@@ -81,6 +87,7 @@ ElementID :: distinct string
 ElementType :: enum {
 	Container,
 	Text,
+	Image,
 }
 
 LayoutDirection :: enum {
@@ -137,6 +144,7 @@ UINode :: struct {
 
 	// Content
 	text_content: string, // If Type == Text
+	image_path:   string, // If Type == Image (file path to image)
 
 	// Behavior (Callbacks)
 	on_click:     proc(ctx: rawptr),

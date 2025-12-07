@@ -1,13 +1,13 @@
 package ts_build
 
-import    "core:fmt"
-import    "core:log"
-import    "core:path/filepath"
-import    "core:strings"
+import "core:fmt"
+import "core:log"
 import os "core:os/os2"
+import "core:path/filepath"
+import "core:strings"
 
 _install :: proc(opts: Install_Opts) -> bool {
-	paths   := paths()
+	paths := paths()
 	lib_dir := filepath.join({paths.repo_dir, "tree-sitter"})
 
 	if os.exists(lib_dir) {
@@ -18,16 +18,23 @@ _install :: proc(opts: Install_Opts) -> bool {
 		}
 	}
 
-	exec("git", "clone", opts.repo, "--depth=1", strings.concatenate({"--branch=", opts.branch}), "tmp-tree-sitter") or_return
+	exec(
+		"git",
+		"clone",
+		opts.repo,
+		"--depth=1",
+		strings.concatenate({"--branch=", opts.branch}),
+		"tmp-tree-sitter",
+	) or_return
 	defer rmrf("tmp-tree-sitter")
 
 	/* cc -I/lib/include -I/lib/src -I/lib/src/wasm -O3 -c lib/src/lib.c */
 	{
 		cmd: [dynamic]string
 
-		include_dir := filepath.join({ "tmp-tree-sitter", "lib", "include" })
-		src_dir     := filepath.join({ "tmp-tree-sitter", "lib", "src" })
-		wasm_dir    := filepath.join({ "tmp-tree-sitter", "lib", "src", "wasm" })
+		include_dir := filepath.join({"tmp-tree-sitter", "lib", "include"})
+		src_dir := filepath.join({"tmp-tree-sitter", "lib", "src"})
+		wasm_dir := filepath.join({"tmp-tree-sitter", "lib", "src", "wasm"})
 
 		when ODIN_OS == .Windows {
 			append(&cmd, "/Ox")
@@ -85,13 +92,26 @@ _install :: proc(opts: Install_Opts) -> bool {
 	}
 
 	when ODIN_OS == .Windows {
-		cp_file("libtree-sitter.lib", filepath.join({lib_dir, "libtree-sitter.lib"}), rm_src=true) or_return
+		cp_file(
+			"libtree-sitter.lib",
+			filepath.join({lib_dir, "libtree-sitter.lib"}),
+			rm_src = true,
+		) or_return
 	} else {
-		cp_file("libtree-sitter.a", filepath.join({lib_dir, "libtree-sitter.a"}), rm_src=true) or_return
+		cp_file(
+			"libtree-sitter.a",
+			filepath.join({lib_dir, "libtree-sitter.a"}),
+			rm_src = true,
+		) or_return
 
 		if ODIN_OS == .Darwin && opts.debug {
 			/* dsymutil lib.o $lib_dir/libtree-sitter.dSYM */
-			exec("dsymutil", "lib.o", "-o", filepath.join({lib_dir, "libtree-sitter.dSYM"})) or_return
+			exec(
+				"dsymutil",
+				"lib.o",
+				"-o",
+				filepath.join({lib_dir, "libtree-sitter.dSYM"}),
+			) or_return
 		}
 	}
 
@@ -135,7 +155,7 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 	defer rmrf(pp.tmp_dir)
 
 	// Section can probably be used by other langs.
-	c_files:  [dynamic]string
+	c_files: [dynamic]string
 	ar_files: [dynamic]string
 
 	cwd, err := os.getwd(context.allocator)
@@ -203,7 +223,7 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 
 		compile(&cmd) or_return
 	}
-	defer { for af in ar_files do rm_file(af) }
+	defer {for af in ar_files do rm_file(af)}
 
 	/* ar cr parser.a parser.o scanner.o */
 	{
@@ -224,17 +244,25 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 		log.errorf("could not make directory %q: %v", parser_dir, os.error_string(merr))
 		return false
 	}
-	defer { if !ok do rmrf(parser_dir) }
+	defer {if !ok do rmrf(parser_dir)}
 
 	for lpath, i in ([]string{"LICENSE", "LICENSE.txt", "LICENSE.md", "LICENSE.rst"}) {
-		if cp_file(filepath.join({pp.tmp_dir, lpath}), filepath.join({parser_dir, lpath}), try_it=true) {
+		if cp_file(
+			filepath.join({pp.tmp_dir, lpath}),
+			filepath.join({parser_dir, lpath}),
+			try_it = true,
+		) {
 			break
 		} else if i == 3 {
 			log.warnf("could not find license at a common path, going on without copying it")
 		}
 	}
 
-	cp_file(filepath.join({pp.tmp_dir, "README.md"}), filepath.join({parser_dir, "README.md"}), try_it=true)
+	cp_file(
+		filepath.join({pp.tmp_dir, "README.md"}),
+		filepath.join({parser_dir, "README.md"}),
+		try_it = true,
+	)
 
 	when ODIN_OS == .Windows {
 		cp_file(pp.tmp_parser_path, filepath.join({parser_dir, "parser.lib"}))
@@ -267,7 +295,11 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 
 		queries_fd, errno := os.open(queries_dir, os.O_RDONLY)
 		if errno != nil {
-			log.errorf("could not open queries directory %q in parser repo: %v", queries_dir, os.error_string(errno))
+			log.errorf(
+				"could not open queries directory %q in parser repo: %v",
+				queries_dir,
+				os.error_string(errno),
+			)
 			return false
 		}
 		defer os.close(queries_fd)
@@ -281,9 +313,9 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 				return false
 			}
 
-			type     := strings.trim_suffix(info.name, ".scm")
+			type := strings.trim_suffix(info.name, ".scm")
 			constant := strings.to_screaming_snake_case(type)
-			rel      := fmt.tprintf("queries/%s", info.name)
+			rel := fmt.tprintf("queries/%s", info.name)
 
 			ws :: strings.write_string
 			ws(&buf, constant)

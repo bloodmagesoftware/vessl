@@ -18,7 +18,7 @@ ask_for_line :: proc(prompt: string) -> (string, bool) {
 		}
 		defer n += nn
 
-		for c in buf[n:n+nn] {
+		for c in buf[n:n + nn] {
 			if c == '\n' {
 				break read_loop
 			}
@@ -43,10 +43,12 @@ confirm :: proc(msg: string, skip: bool) -> (bool, bool) {
 		}
 		if n != 0 do break
 	}
-	
+
 	switch buf[0] {
-	case 'y', 'Y': return true,  true
-	case:          return false, true
+	case 'y', 'Y':
+		return true, true
+	case:
+		return false, true
 	}
 }
 
@@ -58,9 +60,12 @@ name_from_url :: proc(url: string, skip_input: bool) -> (string, bool) {
 		return ask_for_line("enter the language name")
 	}
 
-	name := url[idx+len("tree-sitter-"):]
-	confirmation, ok := confirm(fmt.tprintf("detected language name: %q, is that correct", name), skip_input)
-	if !ok { return "", false }
+	name := url[idx + len("tree-sitter-"):]
+	confirmation, ok := confirm(
+		fmt.tprintf("detected language name: %q, is that correct", name),
+		skip_input,
+	)
+	if !ok {return "", false}
 
 	if !confirmation {
 		return ask_for_line("enter the language name")

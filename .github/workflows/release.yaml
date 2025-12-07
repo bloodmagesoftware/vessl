@@ -56,11 +56,12 @@ jobs:
           install-linux-dependencies: true
           version: 3-latest
           version-sdl-ttf: 3-latest
+          version-sdl-image: 3-latest
 
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
         run: |
-          brew install sdl3 sdl3_ttf librsvg
+          brew install sdl3 sdl3_ttf sdl3_image librsvg
 
       - name: Setup MSVC Developer Command Prompt (Windows)
         if: matrix.platform == 'windows'
@@ -88,7 +89,7 @@ jobs:
       - name: Build (Linux)
         if: matrix.platform == 'linux'
         env:
-          LIBRARY_PATH: ${{ env.SDL3_ROOT }}/lib:${{ env.SDL3_ttf_ROOT }}/lib
+          LIBRARY_PATH: ${{ env.SDL3_ROOT }}/lib:${{ env.SDL3_ttf_ROOT }}/lib:${{ env.SDL3_image_ROOT }}/lib
         run: odin build src -out:${{ steps.binary.outputs.name }} -target:${{ matrix.odin-target }} -o:speed
 
       - name: Build (macOS)
