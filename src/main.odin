@@ -314,9 +314,19 @@ main :: proc() {
 				running = false
 
 			case .MOUSE_WHEEL:
+				// SDL3 provides precise scroll values for smooth scrolling
+				// Accumulate scroll delta - will be consumed in render_frame
+				ui.accumulate_scroll_delta(renderer_ctx, event.wheel.x, event.wheel.y)
+
 				// Input that implies motion: Request 60FPS for 500ms
 				// to allow scroll damping/inertia to settle.
 				animation_until = sdl.GetTicks() + 500
+
+				// Request immediate render for scroll feedback
+				sync.mutex_lock(&render_required_mutex)
+				render_required = true
+				needs_render = true
+				sync.mutex_unlock(&render_required_mutex)
 
 			case .MOUSE_MOTION:
 				// Update mouse position
@@ -575,7 +585,7 @@ main :: proc() {
 
 			// Render UI tree (check for clicks only if mouse was clicked this frame)
 			// Get cursor type from hovered node
-			hovered_cursor := ui.render_frame(renderer_ctx, mouse_click_this_frame)
+			hovered_cursor := ui.render_frame(renderer_ctx, mouse_click_this_frame, dt)
 
 			// Set cursor based on hovered node
 			set_cursor_for_type(window_ctx.window, hovered_cursor)

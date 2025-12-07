@@ -29,19 +29,22 @@ ImageCacheEntry :: struct {
 }
 
 RendererContext :: struct {
-	clay_ctx:      ^clay.Context,
-	clay_arena:    clay.Arena,
-	clay_memory:   []u8,
-	root_node:     ^api.UINode,
-	window_width:  f32,
-	window_height: f32,
-	window_ctx:    ^win.WindowContext, // SDL renderer for initial testing
-	default_font:  ^ttf.Font, // TTF_Font*
-	text_engine:   ^ttf.TextEngine, // SDL3 Text Engine
-	font_size:     f32,
-	font_loaded:   bool,
-	text_cache:    [dynamic]TextCacheEntry, // Cache text objects to avoid recreating every frame
-	image_cache:   map[string]ImageCacheEntry, // Cache loaded image textures
+	clay_ctx:       ^clay.Context,
+	clay_arena:     clay.Arena,
+	clay_memory:    []u8,
+	root_node:      ^api.UINode,
+	window_width:   f32,
+	window_height:  f32,
+	window_ctx:     ^win.WindowContext, // SDL renderer for initial testing
+	default_font:   ^ttf.Font, // TTF_Font*
+	text_engine:    ^ttf.TextEngine, // SDL3 Text Engine
+	font_size:      f32,
+	font_loaded:    bool,
+	text_cache:     [dynamic]TextCacheEntry, // Cache text objects to avoid recreating every frame
+	image_cache:    map[string]ImageCacheEntry, // Cache loaded image textures
+	// Scroll state - accumulated between frames, consumed in render_frame
+	scroll_delta_x: f32,
+	scroll_delta_y: f32,
 }
 
 // Clay text measurement function (required by Clay)
@@ -318,6 +321,14 @@ update_pointer_state :: proc(ctx: ^RendererContext, x: f32, y: f32, pointer_down
 	clay.SetPointerState({x, y}, pointer_down)
 }
 
+// Accumulate scroll delta (call when mouse wheel event occurs)
+// The delta will be consumed in render_frame before BeginLayout
+accumulate_scroll_delta :: proc(ctx: ^RendererContext, scroll_delta_x: f32, scroll_delta_y: f32) {
+	if ctx == nil do return
+	ctx.scroll_delta_x += scroll_delta_x
+	ctx.scroll_delta_y += scroll_delta_y
+}
+
 // Find clicked node using Clay's PointerOver API (call after layout)
 find_clicked_node_clay :: proc(ctx: ^RendererContext, root: ^api.UINode) -> ^api.UINode {
 	if ctx == nil || root == nil || ctx.clay_ctx == nil do return nil
@@ -378,10 +389,12 @@ find_clicked_node_recursive :: proc(ctx: ^RendererContext, node: ^api.UINode) ->
 
 // Render the UI tree using Clay's declarative API
 // check_click: if true, check for clicked nodes and trigger callbacks
+// dt: delta time in seconds for scroll momentum
 // Returns: (hovered_cursor: api.CursorType) - the cursor type of the currently hovered node
 render_frame :: proc(
 	ctx: ^RendererContext,
 	check_click: bool = false,
+	dt: f32 = 0.016,
 ) -> (
 	hovered_cursor: api.CursorType,
 ) {
@@ -391,13 +404,20 @@ render_frame :: proc(
 
 	// Set current Clay context
 	clay.SetCurrentContext(ctx.clay_ctx)
+
+	// Update scroll containers BEFORE BeginLayout (required for Clay scrolling)
+	// Clay tracks scroll positions internally and handles momentum/inertia
+	clay.UpdateScrollContainers(true, {ctx.scroll_delta_x, ctx.scroll_delta_y}, dt)
+	ctx.scroll_delta_x = 0
+	ctx.scroll_delta_y = 0
+
 	clay.SetLayoutDimensions({width = ctx.window_width, height = ctx.window_height})
 
 	// Begin Clay layout
 	clay.BeginLayout()
 
-	// Convert UINode tree to Clay UI() calls (first pass - layout)
-	build_clay_ui(ctx, ctx.root_node, check_hover = false)
+	// Convert UINode tree to Clay UI() calls with hover checking
+	build_clay_ui(ctx, ctx.root_node, check_hover = true)
 
 	// End layout and get render commands
 	render_commands_temp := clay.EndLayout()
@@ -405,13 +425,6 @@ render_frame :: proc(
 
 	// Find the cursor type of the hovered node (after layout is complete)
 	hovered_cursor = find_hovered_cursor(ctx, ctx.root_node)
-
-	// Rebuild UI with hover colors (second pass)
-	// This is a bit inefficient but ensures hover colors are correct
-	clay.BeginLayout()
-	build_clay_ui(ctx, ctx.root_node, check_hover = true)
-	render_commands_temp_hover := clay.EndLayout()
-	render_commands = &render_commands_temp_hover
 
 	// Check for clicked node after layout (only if requested)
 	// Pointer state should be set before BeginLayout with pointer_down=true
@@ -587,11 +600,17 @@ build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: boo
 
 	switch node.type {
 	case .Container:
-		// Create container element
-		clip_config := clay.ClipElementConfig {
-			horizontal  = node.style.clip_horizontal,
-			vertical    = node.style.clip_vertical,
-			childOffset = {0, 0}, // Scroll offset (can be updated for scrolling)
+		node_id_str := string(node.id)
+		clay_id := clay.ID(node_id_str)
+
+		// Get scroll offset from Clay if this is a scrollable container
+		// Clay tracks scroll position internally; we apply it via childOffset
+		child_offset := clay.Vector2{0, 0}
+		if node.style.clip_vertical || node.style.clip_horizontal {
+			scroll_data := clay.GetScrollContainerData(clay_id)
+			if scroll_data.found && scroll_data.scrollPosition != nil {
+				child_offset = scroll_data.scrollPosition^
+			}
 		}
 
 		element_config := clay.ElementDeclaration {
@@ -603,12 +622,14 @@ build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: boo
 				childAlignment = {x = .Left, y = .Top},
 			},
 			backgroundColor = bg_color,
-			clip = clip_config,
+			clip = {
+				horizontal = node.style.clip_horizontal,
+				vertical = node.style.clip_vertical,
+				childOffset = child_offset,
+			},
 		}
 
-		// Use node ID string for Clay ID
-		node_id_str := string(node.id)
-		if clay.UI(clay.ID(node_id_str))(element_config) {
+		if clay.UI(clay_id)(element_config) {
 			// Render children
 			for child in node.children {
 				build_clay_ui(ctx, child, check_hover)
@@ -828,7 +849,22 @@ process_render_commands :: proc(
 				}
 			}
 
-		case .None, .ScissorStart, .ScissorEnd, .Custom:
+		case .ScissorStart:
+			// Set SDL clipping rectangle for scroll containers
+			box := cmd.boundingBox
+			clip_rect := sdl.Rect {
+				x = i32(box.x),
+				y = i32(box.y),
+				w = i32(box.width),
+				h = i32(box.height),
+			}
+			sdl.SetRenderClipRect(ctx.window_ctx.renderer, &clip_rect)
+
+		case .ScissorEnd:
+			// Reset clipping rectangle
+			sdl.SetRenderClipRect(ctx.window_ctx.renderer, nil)
+
+		case .None, .Custom:
 		// Unhandled command types - skip for now
 		}
 	}
