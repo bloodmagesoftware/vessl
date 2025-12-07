@@ -503,11 +503,6 @@ filetree_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 		return false
 	}
 
-	// Only log non-App_Startup events to reduce noise
-	if event.type != .App_Startup {
-		fmt.printf("[filetree] Received event type: %v\n", event.type)
-	}
-
 	#partial switch event.type {
 	case .Working_Directory_Changed:
 		// Handle working directory change - update root path and rebuild filetree

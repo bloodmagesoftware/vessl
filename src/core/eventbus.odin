@@ -160,6 +160,13 @@ emit_event_typed :: proc(
 	return event, handled
 }
 
+// Reset the event arena - call this at the end of each frame
+// Events are short-lived, so their memory can be reclaimed after processing
+reset_event_arena :: proc(bus: ^EventBus) {
+	if bus == nil do return
+	mem.arena_free_all(&bus.arena)
+}
+
 // =============================================================================
 // Keyboard Shortcut Registry
 // =============================================================================

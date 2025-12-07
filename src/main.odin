@@ -595,5 +595,9 @@ main :: proc() {
 			// TODO: Check Clay scroll state if needed
 			// Clay's scroll state can be checked via GetScrollContainerData if needed
 		}
+
+		// Reset event arena at end of frame - events are short-lived and have been processed
+		// This prevents the arena from filling up and causing event allocation failures
+		core.reset_event_arena(eventbus)
 	}
 }
