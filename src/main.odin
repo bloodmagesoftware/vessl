@@ -1,5 +1,6 @@
 package main
 
+import api "api"
 import win "core"
 import core "core"
 import "core:fmt"
@@ -9,11 +10,10 @@ import "core:sync"
 import filetree "plugins/filetree"
 import vscode_default "plugins/vscode_default"
 import "ui"
-import ui_api "ui"
 import sdl "vendor:sdl3"
 
 // Set cursor based on cursor type
-set_cursor_for_type :: proc(window: ^sdl.Window, cursor_type: ui.CursorType) {
+set_cursor_for_type :: proc(window: ^sdl.Window, cursor_type: api.CursorType) {
 	if window == nil do return
 
 	// Create system cursor based on type
@@ -79,22 +79,34 @@ main :: proc() {
 	defer ui.destroy_renderer(renderer_ctx)
 
 	// Initialize UI Plugin API
-	ui_api_ptr := ui_api.init_ui_api(renderer_ctx)
+	ui_api_ptr := ui.init_ui_api(renderer_ctx)
 	if ui_api_ptr == nil {
 		fmt.eprintln("Failed to initialize UI Plugin API")
 		return
 	}
-	defer ui_api.destroy_ui_api(ui_api_ptr)
+	defer ui.destroy_ui_api(ui_api_ptr)
 
 	// Initialize Platform API (for native dialogs, etc.)
-	// Note: We pass eventbus and plugin_registry as rawptr - they'll be set up properly
-	// and used when dialog callbacks need to emit events
-	platform_api_ptr := ui.init_platform_api(window_ctx.window, nil, nil)
+	platform_api_ptr := ui.init_platform_api(window_ctx.window)
 	if platform_api_ptr == nil {
 		fmt.eprintln("Failed to initialize Platform API")
 		return
 	}
 	defer ui.destroy_platform_api(platform_api_ptr)
+
+	// Initialize VesslAPI - the main API interface for plugins
+	vessl_api := init_vessl_api(
+		eventbus,
+		plugin_registry,
+		shortcut_registry,
+		ui_api_ptr,
+		platform_api_ptr,
+	)
+	if vessl_api == nil {
+		fmt.eprintln("Failed to initialize VesslAPI")
+		return
+	}
+	defer destroy_vessl_api()
 
 	// Register and initialize vscode_default plugin
 	vscode_plugin := new(core.Plugin)
@@ -108,15 +120,8 @@ main :: proc() {
 		return
 	}
 
-	// Cast ui_api_ptr, shortcut_registry, and platform_api to rawptr to pass to init_plugin
-	if !core.init_plugin(
-		plugin_registry,
-		"builtin:vscode_default",
-		eventbus,
-		cast(rawptr)ui_api_ptr,
-		cast(rawptr)shortcut_registry,
-		cast(rawptr)platform_api_ptr,
-	) {
+	// Initialize plugin with VesslAPI
+	if !core.init_plugin(plugin_registry, "builtin:vscode_default", vessl_api) {
 		fmt.eprintln("Failed to initialize vscode_default plugin")
 		return
 	}
@@ -133,15 +138,8 @@ main :: proc() {
 		return
 	}
 
-	// Initialize filetree plugin
-	if !core.init_plugin(
-		plugin_registry,
-		"builtin:filetree",
-		eventbus,
-		cast(rawptr)ui_api_ptr,
-		cast(rawptr)shortcut_registry,
-		cast(rawptr)platform_api_ptr,
-	) {
+	// Initialize filetree plugin with VesslAPI
+	if !core.init_plugin(plugin_registry, "builtin:filetree", vessl_api) {
 		fmt.eprintln("Failed to initialize filetree plugin")
 		return
 	}

@@ -1,5 +1,6 @@
 package ui
 
+import api "../api"
 import clay "../../vendor/clay-odin"
 import win "../core"
 import "base:runtime"
@@ -12,7 +13,7 @@ import ttf "vendor:sdl3/ttf"
 
 // Cache entry for text objects
 TextCacheEntry :: struct {
-	node_id:      ElementID,
+	node_id:      api.ElementID,
 	text_content: string,
 	text_obj:     ^ttf.Text,
 	color:        [4]f32,
@@ -22,7 +23,7 @@ RendererContext :: struct {
 	clay_ctx:      ^clay.Context,
 	clay_arena:    clay.Arena,
 	clay_memory:   []u8,
-	root_node:     ^UINode,
+	root_node:     ^api.UINode,
 	window_width:  f32,
 	window_height: f32,
 	window_ctx:    ^win.WindowContext, // SDL renderer for initial testing
@@ -228,7 +229,7 @@ load_default_font :: proc() -> (font: ^ttf.Font, ok: bool) {
 }
 
 // Set the root UI node
-set_root_node :: proc(ctx: ^RendererContext, root: ^UINode) {
+set_root_node :: proc(ctx: ^RendererContext, root: ^api.UINode) {
 	ctx.root_node = root
 }
 
@@ -253,7 +254,7 @@ update_pointer_state :: proc(ctx: ^RendererContext, x: f32, y: f32, pointer_down
 }
 
 // Find clicked node using Clay's PointerOver API (call after layout)
-find_clicked_node_clay :: proc(ctx: ^RendererContext, root: ^UINode) -> ^UINode {
+find_clicked_node_clay :: proc(ctx: ^RendererContext, root: ^api.UINode) -> ^api.UINode {
 	if ctx == nil || root == nil || ctx.clay_ctx == nil do return nil
 
 	clay.SetCurrentContext(ctx.clay_ctx)
@@ -264,7 +265,7 @@ find_clicked_node_clay :: proc(ctx: ^RendererContext, root: ^UINode) -> ^UINode 
 
 // Recursive helper to find clicked node
 // Prioritizes nodes with click callbacks, and prefers children over parents
-find_clicked_node_recursive :: proc(ctx: ^RendererContext, node: ^UINode) -> ^UINode {
+find_clicked_node_recursive :: proc(ctx: ^RendererContext, node: ^api.UINode) -> ^api.UINode {
 	if node == nil do return nil
 
 	// Convert node ID to Clay ElementId
@@ -309,12 +310,12 @@ find_clicked_node_recursive :: proc(ctx: ^RendererContext, node: ^UINode) -> ^UI
 
 // Render the UI tree using Clay's declarative API
 // check_click: if true, check for clicked nodes and trigger callbacks
-// Returns: (hovered_cursor: CursorType) - the cursor type of the currently hovered node
+// Returns: (hovered_cursor: api.CursorType) - the cursor type of the currently hovered node
 render_frame :: proc(
 	ctx: ^RendererContext,
 	check_click: bool = false,
 ) -> (
-	hovered_cursor: CursorType,
+	hovered_cursor: api.CursorType,
 ) {
 	if ctx.root_node == nil do return .Default
 	if ctx.window_ctx == nil do return .Default
@@ -361,7 +362,7 @@ render_frame :: proc(
 }
 
 // Check if any clickable node is currently hovered (for cursor management)
-check_hovered_clickable :: proc(ctx: ^RendererContext, node: ^UINode) -> bool {
+check_hovered_clickable :: proc(ctx: ^RendererContext, node: ^api.UINode) -> bool {
 	if node == nil do return false
 
 	// Check if this node is clickable and hovered
@@ -385,7 +386,7 @@ check_hovered_clickable :: proc(ctx: ^RendererContext, node: ^UINode) -> bool {
 
 // Find the hovered node and return its cursor type
 // Returns the cursor type of the topmost hovered node (prefers children over parents)
-find_hovered_cursor :: proc(ctx: ^RendererContext, node: ^UINode) -> CursorType {
+find_hovered_cursor :: proc(ctx: ^RendererContext, node: ^api.UINode) -> api.CursorType {
 	if node == nil || ctx == nil || ctx.clay_ctx == nil do return .Default
 
 	clay.SetCurrentContext(ctx.clay_ctx)
@@ -409,7 +410,7 @@ find_hovered_cursor :: proc(ctx: ^RendererContext, node: ^UINode) -> CursorType 
 }
 
 // Convert UINode Sizing to Clay Sizing
-convert_sizing :: proc(sizing: Sizing) -> clay.SizingAxis {
+convert_sizing :: proc(sizing: api.Sizing) -> clay.SizingAxis {
 	switch sizing.unit {
 	case .Pixels:
 		return clay.SizingFixed(sizing.value)
@@ -426,7 +427,7 @@ convert_sizing :: proc(sizing: Sizing) -> clay.SizingAxis {
 
 // Convert UINode to Clay UI() call
 // check_hover: if true, check hover state and adjust colors (must be called after layout)
-build_clay_ui :: proc(ctx: ^RendererContext, node: ^UINode, check_hover: bool = false) {
+build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: bool = false) {
 	if node == nil do return
 
 	// Convert layout direction
@@ -755,7 +756,7 @@ draw_text :: proc(
 // Uses caching to avoid recreating text objects every frame
 draw_text_ttf :: proc(
 	ctx: ^RendererContext,
-	node: ^UINode,
+	node: ^api.UINode,
 	x: f32,
 	y: f32,
 	w: f32,

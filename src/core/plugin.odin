@@ -1,45 +1,23 @@
 package core
 
+import api "../api"
 import "core:fmt"
 import "core:mem"
 import "core:strings"
 import "core:sync"
 
-// Plugin Handle
-PluginHandle :: distinct u64
+// Re-export types from api for internal use
+PluginHandle :: api.PluginHandle
+PluginVTable :: api.PluginVTable
+PluginContext :: api.PluginContext
 
-// Plugin VTable - Every plugin must implement these procedures
-PluginVTable :: struct {
-	// Lifecycle
-	init:     proc(ctx: ^PluginContext) -> bool,
-	update:   proc(ctx: ^PluginContext, dt: f32),
-	shutdown: proc(ctx: ^PluginContext),
-
-	// Event Handling (Return true to consume event)
-	on_event: proc(ctx: ^PluginContext, event: ^Event) -> bool,
-}
-
-// Plugin Context - Passed to all plugin procedures
-// Note: ui_api is rawptr to avoid circular dependency with ui package
-PluginContext :: struct {
-	eventbus:          ^EventBus,
-	plugin_id:         string,
-	user_data:         rawptr,
-	allocator:         mem.Allocator,
-	ui_api:            rawptr, // ^UIPluginAPI from ui package (cast when needed)
-	plugin_registry:   rawptr, // ^PluginRegistry (cast when needed) - allows plugins to dispatch events
-	shortcut_registry: rawptr, // ^ShortcutRegistry - allows plugins to register keyboard shortcuts
-	platform_api:      rawptr, // ^PlatformAPI from ui package - platform features (dialogs, etc.)
-	ctx:               rawptr, // Reserved field (context is a keyword)
-}
-
-// Plugin struct
+// Plugin struct - Internal representation of a plugin
 Plugin :: struct {
 	id:         string,
 	vtable:     PluginVTable,
 	user_data:  rawptr,
 	handle:     PluginHandle,
-	plugin_ctx: PluginContext, // Renamed from 'context' because 'context' is a keyword
+	plugin_ctx: PluginContext, // The context passed to plugin procedures
 }
 
 // Plugin Registry
@@ -133,14 +111,11 @@ update_plugins :: proc(registry: ^PluginRegistry, dt: f32) {
 }
 
 // Initialize a plugin (call after registration)
-// ui_api_ptr, shortcut_registry_ptr, and platform_api_ptr are rawptr to avoid circular dependency
+// vessl_api is the VesslAPI pointer that will be passed to the plugin
 init_plugin :: proc(
 	registry: ^PluginRegistry,
 	plugin_id: string,
-	eventbus: ^EventBus,
-	ui_api_ptr: rawptr,
-	shortcut_registry_ptr: rawptr = nil,
-	platform_api_ptr: rawptr = nil,
+	vessl_api: ^api.VesslAPI,
 ) -> bool {
 	if registry == nil do return false
 
@@ -151,13 +126,9 @@ init_plugin :: proc(
 	}
 
 	// Set up plugin context
-	plugin.plugin_ctx.eventbus = eventbus
 	plugin.plugin_ctx.plugin_id = plugin_id
 	plugin.plugin_ctx.allocator = registry.allocator
-	plugin.plugin_ctx.ui_api = ui_api_ptr
-	plugin.plugin_ctx.plugin_registry = cast(rawptr)registry
-	plugin.plugin_ctx.shortcut_registry = shortcut_registry_ptr
-	plugin.plugin_ctx.platform_api = platform_api_ptr
+	plugin.plugin_ctx.api = vessl_api
 
 	// Call init
 	if plugin.vtable.init != nil {

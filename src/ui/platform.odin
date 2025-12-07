@@ -10,29 +10,14 @@ import sdl "vendor:sdl3"
 // PlatformAPI - Provides platform-level functionality for plugins
 // Plugins should use this API instead of directly accessing SDL
 PlatformAPI :: struct {
-	window:     ^sdl.Window,
-	allocator:  mem.Allocator,
-	// Callback context for async dialog operations
-	dialog_ctx: ^DialogCallbackContext,
-	mutex:      sync.Mutex,
+	window:    ^sdl.Window,
+	allocator: mem.Allocator,
+	mutex:     sync.Mutex,
 }
-
-// Context passed to dialog callbacks
-DialogCallbackContext :: struct {
-	eventbus:        rawptr, // ^core.EventBus - rawptr to avoid circular dependency
-	plugin_registry: rawptr, // ^core.PluginRegistry - rawptr to avoid circular dependency
-	allocator:       mem.Allocator,
-}
-
-// Callback type for folder dialog results
-// path is nil if the user cancelled, otherwise contains the selected folder path
-FolderDialogCallback :: proc(path: string, user_data: rawptr)
 
 // Initialize Platform API
 init_platform_api :: proc(
 	window: ^sdl.Window,
-	eventbus: rawptr,
-	plugin_registry: rawptr,
 	allocator := context.allocator,
 ) -> ^PlatformAPI {
 	if window == nil do return nil
@@ -42,22 +27,12 @@ init_platform_api :: proc(
 	api.allocator = allocator
 	api.mutex = {}
 
-	// Create dialog callback context
-	api.dialog_ctx = new(DialogCallbackContext, allocator)
-	api.dialog_ctx.eventbus = eventbus
-	api.dialog_ctx.plugin_registry = plugin_registry
-	api.dialog_ctx.allocator = allocator
-
 	return api
 }
 
 // Destroy Platform API
 destroy_platform_api :: proc(api: ^PlatformAPI) {
 	if api == nil do return
-
-	if api.dialog_ctx != nil {
-		free(api.dialog_ctx)
-	}
 
 	free(api)
 }
@@ -69,11 +44,6 @@ folder_dialog_sdl_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring, 
 	// Set up proper Odin context for C callback (needed for allocators, fmt, etc.)
 	context = runtime.default_context()
 
-	dialog_ctx := cast(^DialogCallbackContext)userdata
-	if dialog_ctx == nil {
-		return
-	}
-
 	// Check if user cancelled (filelist is nil or first entry is nil)
 	if filelist == nil || filelist[0] == nil {
 		fmt.println("[platform] Folder dialog cancelled by user")
@@ -84,12 +54,7 @@ folder_dialog_sdl_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring, 
 	selected_path := string(filelist[0])
 	fmt.printf("[platform] Folder selected: %s\n", selected_path)
 
-	// We need to emit a Working_Directory_Changed event
-	// Since we can't import core package here (circular dependency),
-	// we'll use a different approach - store the path and let main loop process it
-	// For now, we'll use a global to communicate back
-	// This is set and then the main loop will check it
-
+	// Store the path in global state for the main loop to process
 	sync.mutex_lock(&g_pending_folder_mutex)
 	defer sync.mutex_unlock(&g_pending_folder_mutex)
 
@@ -125,13 +90,13 @@ show_folder_dialog :: proc(api: ^PlatformAPI, default_location: string = "") {
 	// Call SDL's folder dialog
 	// Parameters:
 	// - callback: Called when user selects a folder or cancels
-	// - userdata: Passed to callback
+	// - userdata: Passed to callback (not needed since we use globals)
 	// - window: Parent window (for modal behavior)
 	// - default_location: Starting directory (can be nil)
 	// - allow_many: Whether to allow selecting multiple folders
 	sdl.ShowOpenFolderDialog(
 		folder_dialog_sdl_callback,
-		api.dialog_ctx,
+		nil,
 		api.window,
 		default_loc_cstr,
 		false, // Don't allow selecting multiple folders

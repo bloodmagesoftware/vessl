@@ -1,8 +1,6 @@
 package filetree
 
-import core "../../core"
-import ui "../../ui"
-import ui_api "../../ui"
+import api "../../api"
 import "core:fmt"
 import "core:mem"
 import "core:os"
@@ -13,12 +11,12 @@ import "core:time"
 // Plugin state
 FiletreeState :: struct {
 	root_path:    string,
-	root_node:    ^ui.UINode,
+	root_node:    ^api.UINode,
 	expanded:     map[string]bool,
 	file_entries: map[string]string, // Maps UI node ID to file path
 	failed_dirs:  map[string]string, // Maps path -> error message for directories that failed to open
 	attached:     bool, // Whether we've attached to a container
-	eventbus:     ^core.EventBus, // Store eventbus for emitting events
+	ctx:          ^api.PluginContext, // Store plugin context for API calls
 	allocator:    mem.Allocator,
 }
 
@@ -58,7 +56,7 @@ clear_expanded_recursive :: proc(state: ^FiletreeState, path: string) {
 }
 
 // Initialize the plugin
-filetree_init :: proc(ctx: ^core.PluginContext) -> bool {
+filetree_init :: proc(ctx: ^api.PluginContext) -> bool {
 	fmt.println("[filetree] Initializing...")
 
 	state := new(FiletreeState, ctx.allocator)
@@ -67,7 +65,7 @@ filetree_init :: proc(ctx: ^core.PluginContext) -> bool {
 	state.file_entries = {}
 	state.failed_dirs = {}
 	state.attached = false
-	state.eventbus = ctx.eventbus
+	state.ctx = ctx
 
 	// Get current working directory as default root
 	cwd := os.get_current_directory()
@@ -80,12 +78,12 @@ filetree_init :: proc(ctx: ^core.PluginContext) -> bool {
 }
 
 // Update the plugin
-filetree_update :: proc(ctx: ^core.PluginContext, dt: f32) {
+filetree_update :: proc(ctx: ^api.PluginContext, dt: f32) {
 	// No-op for now
 }
 
 // Shutdown the plugin
-filetree_shutdown :: proc(ctx: ^core.PluginContext) {
+filetree_shutdown :: proc(ctx: ^api.PluginContext) {
 	fmt.println("[filetree] Shutting down...")
 
 	state := cast(^FiletreeState)ctx.user_data
@@ -121,7 +119,7 @@ DirReadResult :: enum {
 
 build_filetree_ui :: proc(
 	state: ^FiletreeState,
-	parent_node: ^ui.UINode,
+	parent_node: ^api.UINode,
 	dir_path: string,
 	depth: int,
 	start_time: time.Tick = {},
@@ -243,20 +241,20 @@ build_filetree_ui :: proc(
 
 		// Create entry node (container for directory)
 		// This will contain the text node and (when expanded) the children
-		entry_id := ui.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
-		entry_node := ui.create_node(entry_id, .Container, state.allocator)
-		entry_node.style.width = ui.SIZE_FULL
-		entry_node.style.height = ui.sizing_fit() // Auto-size to content
+		entry_id := api.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
+		entry_node := api.create_node(entry_id, .Container, state.allocator)
+		entry_node.style.width = api.SIZE_FULL
+		entry_node.style.height = api.sizing_fit() // Auto-size to content
 		entry_node.style.color =
 			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
 		entry_node.style.layout_dir = .TopDown // Vertical layout: text on top, children below
 		entry_node.style.padding = {0, 0, 0, 0} // No padding on entry node itself
 
 		// Create a row container for the directory name (for horizontal layout: indentation + text)
-		row_id := ui.ElementID(fmt.tprintf("filetree_row_%s", full_path))
-		row_node := ui.create_node(row_id, .Container, state.allocator)
-		row_node.style.width = ui.SIZE_FULL
-		row_node.style.height = ui.sizing_fit()
+		row_id := api.ElementID(fmt.tprintf("filetree_row_%s", full_path))
+		row_node := api.create_node(row_id, .Container, state.allocator)
+		row_node.style.width = api.SIZE_FULL
+		row_node.style.height = api.sizing_fit()
 		row_node.style.color =
 			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
 		row_node.style.layout_dir = .LeftRight // Horizontal: indentation + text
@@ -270,10 +268,10 @@ build_filetree_ui :: proc(
 			struct {
 				state:      ^FiletreeState,
 				path:       string,
-				entry_node: ^ui.UINode,
+				entry_node: ^api.UINode,
 				depth:      int,
-				text_node:  ^ui.UINode, // Store text node to update color on error
-				row_node:   ^ui.UINode, // Store row node to update color on error
+				text_node:  ^api.UINode, // Store text node to update color on error
+				row_node:   ^api.UINode, // Store row node to update color on error
 			},
 			state.allocator,
 		)
@@ -286,10 +284,10 @@ build_filetree_ui :: proc(
 			callback_ctx := cast(^struct {
 				state:      ^FiletreeState,
 				path:       string,
-				entry_node: ^ui.UINode,
+				entry_node: ^api.UINode,
 				depth:      int,
-				text_node:  ^ui.UINode,
-				row_node:   ^ui.UINode,
+				text_node:  ^api.UINode,
+				row_node:   ^api.UINode,
 			})ctx
 			if callback_ctx == nil || callback_ctx.state == nil || callback_ctx.entry_node == nil do return
 
@@ -310,7 +308,7 @@ build_filetree_ui :: proc(
 
 				// Expand: add children to the entry node
 				// First, clear any existing children except the row_node (first child, contains text)
-				ui.clear_children_except(callback_ctx.entry_node, 1)
+				api.clear_children_except(callback_ctx.entry_node, 1)
 
 				// Then add directory contents (these will appear below the row_node)
 				start := time.tick_now()
@@ -349,7 +347,7 @@ build_filetree_ui :: proc(
 				// Collapse: clear expanded state for this directory AND all subdirectories
 				clear_expanded_recursive(callback_ctx.state, callback_ctx.path)
 				// Remove all children except the row_node (first child, contains text)
-				ui.clear_children_except(callback_ctx.entry_node, 1)
+				api.clear_children_except(callback_ctx.entry_node, 1)
 			}
 		}
 
@@ -359,10 +357,10 @@ build_filetree_ui :: proc(
 		row_node.cursor = .Hand // Set hand cursor for clickable directory items
 
 		// Create text node for directory name
-		text_id := ui.ElementID(fmt.tprintf("filetree_text_%s", full_path))
-		text_node := ui.create_node(text_id, .Text, state.allocator)
-		text_node.style.width = ui.sizing_grow()
-		text_node.style.height = ui.sizing_fit() // Auto-size to text content
+		text_id := api.ElementID(fmt.tprintf("filetree_text_%s", full_path))
+		text_node := api.create_node(text_id, .Text, state.allocator)
+		text_node.style.width = api.sizing_grow()
+		text_node.style.height = api.sizing_fit() // Auto-size to text content
 		text_node.style.padding = {0, 0, 0, 0} // No padding on text node itself
 		text_node.text_content = strings.clone(entry.name, state.allocator)
 		// Use red text for failed directories, normal for others
@@ -379,9 +377,9 @@ build_filetree_ui :: proc(
 
 		// Build hierarchy: entry_node -> row_node -> text_node
 		// When expanded, children will be added directly to entry_node (below row_node)
-		ui.add_child(row_node, text_node)
-		ui.add_child(entry_node, row_node)
-		ui.add_child(parent_node, entry_node)
+		api.add_child(row_node, text_node)
+		api.add_child(entry_node, row_node)
+		api.add_child(parent_node, entry_node)
 
 		// If expanded, recursively add children (pass start_time for timeout tracking)
 		if state.expanded[full_path] or_else false {
@@ -396,10 +394,10 @@ build_filetree_ui :: proc(
 
 		// Create entry node (container for file)
 		// Files are simpler - just a row with indentation + text
-		entry_id := ui.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
-		entry_node := ui.create_node(entry_id, .Container, state.allocator)
-		entry_node.style.width = ui.SIZE_FULL
-		entry_node.style.height = ui.sizing_fit() // Auto-size to content
+		entry_id := api.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
+		entry_node := api.create_node(entry_id, .Container, state.allocator)
+		entry_node.style.width = api.SIZE_FULL
+		entry_node.style.height = api.sizing_fit() // Auto-size to content
 		entry_node.style.color = {0.2, 0.2, 0.2, 1.0} // Default background (will change on hover)
 		entry_node.style.layout_dir = .LeftRight // Horizontal: indentation + text
 		entry_node.style.padding = {u16(depth * 16), 4, 4, 4} // Indentation left, padding for better click target
@@ -426,12 +424,14 @@ build_filetree_ui :: proc(
 
 			fmt.printf("[filetree] File clicked: %s\n", callback_ctx.path)
 
-			// Emit Buffer_Open event
-			buffer_payload := core.EventPayload_Buffer {
-				file_path = callback_ctx.path,
-				buffer_id = fmt.tprintf("buffer_%s", callback_ctx.path),
+			// Emit Buffer_Open event via API
+			if callback_ctx.state.ctx != nil {
+				buffer_payload := api.EventPayload_Buffer {
+					file_path = callback_ctx.path,
+					buffer_id = fmt.tprintf("buffer_%s", callback_ctx.path),
+				}
+				api.emit_event(callback_ctx.state.ctx, .Buffer_Open, buffer_payload)
 			}
-			core.emit_event_typed(callback_ctx.state.eventbus, .Buffer_Open, buffer_payload)
 		}
 
 		// Set callback on entry node
@@ -440,10 +440,10 @@ build_filetree_ui :: proc(
 		entry_node.cursor = .Hand // Set hand cursor for clickable file items
 
 		// Create text node for file name
-		text_id := ui.ElementID(fmt.tprintf("filetree_text_%s", full_path))
-		text_node := ui.create_node(text_id, .Text, state.allocator)
-		text_node.style.width = ui.sizing_grow()
-		text_node.style.height = ui.sizing_fit() // Auto-size to text content
+		text_id := api.ElementID(fmt.tprintf("filetree_text_%s", full_path))
+		text_node := api.create_node(text_id, .Text, state.allocator)
+		text_node.style.width = api.sizing_grow()
+		text_node.style.height = api.sizing_fit() // Auto-size to text content
 		text_node.style.padding = {0, 0, 0, 0} // No padding on text node itself
 		text_node.text_content = strings.clone(entry.name, state.allocator)
 		text_node.style.color = {0.7, 0.7, 0.9, 1.0} // Slightly blue for files
@@ -453,32 +453,32 @@ build_filetree_ui :: proc(
 		text_node.callback_ctx = file_callback_ctx
 		text_node.cursor = .Hand // Set hand cursor for clickable file text
 
-		ui.add_child(entry_node, text_node)
-		ui.add_child(parent_node, entry_node)
+		api.add_child(entry_node, text_node)
+		api.add_child(parent_node, entry_node)
 	}
 
 	// Add truncation indicator if entries were limited
 	if was_truncated {
-		truncation_id := ui.ElementID(fmt.tprintf("filetree_truncated_%s", dir_path))
-		truncation_node := ui.create_node(truncation_id, .Container, state.allocator)
-		truncation_node.style.width = ui.SIZE_FULL
-		truncation_node.style.height = ui.sizing_fit()
+		truncation_id := api.ElementID(fmt.tprintf("filetree_truncated_%s", dir_path))
+		truncation_node := api.create_node(truncation_id, .Container, state.allocator)
+		truncation_node.style.width = api.SIZE_FULL
+		truncation_node.style.height = api.sizing_fit()
 		truncation_node.style.color = {0.2, 0.2, 0.2, 1.0}
 		truncation_node.style.layout_dir = .LeftRight
 		truncation_node.style.padding = {u16(depth * 16), 4, 4, 4}
 
-		truncation_text_id := ui.ElementID(fmt.tprintf("filetree_truncated_text_%s", dir_path))
-		truncation_text := ui.create_node(truncation_text_id, .Text, state.allocator)
-		truncation_text.style.width = ui.sizing_grow()
-		truncation_text.style.height = ui.sizing_fit()
+		truncation_text_id := api.ElementID(fmt.tprintf("filetree_truncated_text_%s", dir_path))
+		truncation_text := api.create_node(truncation_text_id, .Text, state.allocator)
+		truncation_text.style.width = api.sizing_grow()
+		truncation_text.style.height = api.sizing_fit()
 		truncation_text.text_content = strings.clone(
 			fmt.tprintf("(%d+ more...)", MAX_ENTRIES),
 			state.allocator,
 		)
 		truncation_text.style.color = {0.5, 0.5, 0.5, 1.0} // Gray text for indicator
 
-		ui.add_child(truncation_node, truncation_text)
-		ui.add_child(parent_node, truncation_node)
+		api.add_child(truncation_node, truncation_text)
+		api.add_child(parent_node, truncation_node)
 
 		return .Truncated
 	}
@@ -487,7 +487,7 @@ build_filetree_ui :: proc(
 }
 
 // Handle events
-filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool {
+filetree_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 	if event == nil do return false
 
 	state := cast(^FiletreeState)ctx.user_data
@@ -505,7 +505,7 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 	case .Working_Directory_Changed:
 		// Handle working directory change - update root path and rebuild filetree
 		#partial switch payload in event.payload {
-		case core.EventPayload_WorkingDirectory:
+		case api.EventPayload_WorkingDirectory:
 			fmt.printf("[filetree] Working directory changed to: %s\n", payload.path)
 
 			// Update root path
@@ -526,7 +526,7 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 			// Clear and rebuild filetree UI if we have a root node
 			if state.root_node != nil {
 				// Clear all children from the root node
-				ui.clear_children_except(state.root_node, 0)
+				api.clear_children_except(state.root_node, 0)
 
 				// Rebuild the filetree with new root path
 				fmt.printf("[filetree] Rebuilding filetree UI for: %s\n", state.root_path)
@@ -550,7 +550,7 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 		fmt.println("[filetree] Processing Layout_Container_Ready event")
 		// Check if this event is for us - use type switch for safe casting
 		#partial switch payload in event.payload {
-		case core.EventPayload_Layout:
+		case api.EventPayload_Layout:
 			fmt.printf("[filetree] Event target_plugin: %s\n", payload.target_plugin)
 			if payload.target_plugin != "builtin:filetree" {
 				fmt.printf(
@@ -574,10 +574,10 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 			// Build filetree UI
 			if state.root_node == nil {
 				// Create root container for filetree (scrollable)
-				root_id := ui.ElementID("filetree_root")
-				state.root_node = ui.create_node(root_id, .Container, ctx.allocator)
-				state.root_node.style.width = ui.SIZE_FULL
-				state.root_node.style.height = ui.SIZE_FULL
+				root_id := api.ElementID("filetree_root")
+				state.root_node = api.create_node(root_id, .Container, ctx.allocator)
+				state.root_node.style.width = api.SIZE_FULL
+				state.root_node.style.height = api.SIZE_FULL
 				state.root_node.style.color = {0.2, 0.2, 0.2, 1.0}
 				state.root_node.style.layout_dir = .TopDown
 				state.root_node.style.padding = {8, 8, 8, 8} // Padding around filetree
@@ -597,16 +597,13 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 				fmt.printf("[filetree] Finished building filetree UI\n")
 			}
 
-			// Attach to the container
-			if ctx.ui_api != nil {
-				ui_api_ptr := cast(^ui_api.UIPluginAPI)ctx.ui_api
-				if ui_api.attach_to_container(ui_api_ptr, payload.container_id, state.root_node) {
-					state.attached = true
-					fmt.println("[filetree] Successfully attached to container")
-					return true // Consume the event
-				} else {
-					fmt.eprintln("[filetree] Failed to attach to container")
-				}
+			// Attach to the container via API
+			if api.attach_to_container(ctx, payload.container_id, state.root_node) {
+				state.attached = true
+				fmt.println("[filetree] Successfully attached to container")
+				return true // Consume the event
+			} else {
+				fmt.eprintln("[filetree] Failed to attach to container")
 			}
 
 			return false
@@ -621,8 +618,8 @@ filetree_on_event :: proc(ctx: ^core.PluginContext, event: ^core.Event) -> bool 
 }
 
 // Get the plugin VTable
-get_vtable :: proc() -> core.PluginVTable {
-	return core.PluginVTable {
+get_vtable :: proc() -> api.PluginVTable {
+	return api.PluginVTable {
 		init = filetree_init,
 		update = filetree_update,
 		shutdown = filetree_shutdown,

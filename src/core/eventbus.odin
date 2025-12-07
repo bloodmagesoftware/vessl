@@ -1,68 +1,21 @@
 package core
 
+import api "../api"
 import "core:fmt"
 import "core:mem"
 import "core:strings"
 import "core:sync"
 
-// Event Types
-EventType :: enum {
-	App_Startup,
-	App_Shutdown,
-	Window_Resize,
-	Window_File_Drop,
-
-	// UI Layout Events
-	Layout_Container_Ready, // Sent by Main Config to signal a slot is ready
-
-	// Workspace Events
-	Working_Directory_Changed, // Emitted when user selects a new working directory
-
-	// Editor Events
-	Buffer_Open,
-	Buffer_Save,
-	Cursor_Move,
-
-	// Custom/String based for loose coupling
-	Custom_Signal,
-}
-
-// Event Payloads
-EventPayload_Layout :: struct {
-	container_id:  string, // The ID of the container ready to receive children
-	target_plugin: string, // "builtin:filetree", "builtin:terminal", etc.
-}
-
-EventPayload_Buffer :: struct {
-	file_path: string,
-	buffer_id: string,
-}
-
-EventPayload_File :: struct {
-	path: string,
-}
-
-EventPayload_Custom :: struct {
-	name: string,
-	data: rawptr,
-}
-
-EventPayload_WorkingDirectory :: struct {
-	path: string, // The new working directory path
-}
-
-// Event struct
-Event :: struct {
-	type:    EventType,
-	handled: bool, // If true, propagation stops
-	payload: union {
-		EventPayload_Layout,
-		EventPayload_Buffer,
-		EventPayload_File,
-		EventPayload_Custom,
-		EventPayload_WorkingDirectory,
-	},
-}
+// Re-export types from api for internal use
+// This allows internal code to use core.Event, core.EventType, etc.
+Event :: api.Event
+EventType :: api.EventType
+EventPayload :: api.EventPayload
+EventPayload_Layout :: api.EventPayload_Layout
+EventPayload_Buffer :: api.EventPayload_Buffer
+EventPayload_File :: api.EventPayload_File
+EventPayload_Custom :: api.EventPayload_Custom
+EventPayload_WorkingDirectory :: api.EventPayload_WorkingDirectory
 
 // Event subscriber callback
 // Returns true if the event was handled (stops propagation)
@@ -179,13 +132,7 @@ emit_event :: proc(bus: ^EventBus, event: ^Event) -> bool {
 }
 
 // Helper to create and emit an event (uses arena allocator)
-emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
-		EventPayload_Layout,
-		EventPayload_Buffer,
-		EventPayload_File,
-		EventPayload_Custom,
-		EventPayload_WorkingDirectory,
-	}) -> (^Event, bool) {
+emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: EventPayload) -> (^Event, bool) {
 	if bus == nil do return nil, false
 
 	// Allocate event from arena
@@ -205,41 +152,9 @@ emit_event_typed :: proc(bus: ^EventBus, type: EventType, payload: union {
 // Keyboard Shortcut Registry
 // =============================================================================
 
-// Keyboard modifier flags - Platform-specific for clarity
-//
-// Windows/Linux modifiers:
-//   - Ctrl:  Control key (primary modifier for shortcuts like Ctrl+S)
-//   - Alt:   Alt key
-//   - Meta:  Windows key (rarely used in shortcuts)
-//   - Shift: Shift key (shared across platforms)
-//
-// macOS modifiers:
-//   - Cmd:     Command key (primary modifier for shortcuts like Cmd+S)
-//   - Opt:     Option key (equivalent to Alt on other platforms)
-//   - CtrlMac: Control key on Mac (rarely used, distinct from Cmd)
-//   - Shift:   Shift key (shared across platforms)
-//
-// Plugin authors should register shortcuts for both platforms:
-//   register_shortcut(registry, 'o', {.Ctrl}, "open_file", id)  // Windows/Linux
-//   register_shortcut(registry, 'o', {.Cmd}, "open_file", id)   // macOS
-//
-KeyModifierFlag :: enum {
-	// Windows/Linux modifiers
-	Ctrl, // Control key on Windows/Linux
-	Alt, // Alt key on Windows/Linux
-	Meta, // Windows key on Windows/Linux
-
-	// macOS modifiers
-	Cmd, // Command key on macOS (⌘)
-	Opt, // Option key on macOS (⌥)
-	CtrlMac, // Control key on macOS (⌃)
-
-	// Shared
-	Shift, // Shift key (all platforms)
-}
-
-// Bit set of modifier flags for combining modifiers
-KeyModifier :: bit_set[KeyModifierFlag]
+// Re-export keyboard types from api
+KeyModifierFlag :: api.KeyModifierFlag
+KeyModifier :: api.KeyModifier
 
 // A registered keyboard shortcut
 KeyboardShortcut :: struct {

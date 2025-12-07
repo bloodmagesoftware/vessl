@@ -1,0 +1,240 @@
+package api
+
+import "core:mem"
+
+// =============================================================================
+// Event System Types
+// =============================================================================
+
+// Event Types - All events that can be emitted in the system
+EventType :: enum {
+	App_Startup,
+	App_Shutdown,
+	Window_Resize,
+	Window_File_Drop,
+
+	// UI Layout Events
+	Layout_Container_Ready, // Sent by Main Config to signal a slot is ready
+
+	// Workspace Events
+	Working_Directory_Changed, // Emitted when user selects a new working directory
+
+	// Editor Events
+	Buffer_Open,
+	Buffer_Save,
+	Cursor_Move,
+
+	// Custom/String based for loose coupling
+	Custom_Signal,
+}
+
+// Event Payloads
+EventPayload_Layout :: struct {
+	container_id:  string, // The ID of the container ready to receive children
+	target_plugin: string, // "builtin:filetree", "builtin:terminal", etc.
+}
+
+EventPayload_Buffer :: struct {
+	file_path: string,
+	buffer_id: string,
+}
+
+EventPayload_File :: struct {
+	path: string,
+}
+
+EventPayload_Custom :: struct {
+	name: string,
+	data: rawptr,
+}
+
+EventPayload_WorkingDirectory :: struct {
+	path: string, // The new working directory path
+}
+
+// Event Payload Union - All possible payloads
+EventPayload :: union {
+	EventPayload_Layout,
+	EventPayload_Buffer,
+	EventPayload_File,
+	EventPayload_Custom,
+	EventPayload_WorkingDirectory,
+}
+
+// Event struct - Represents an event in the system
+Event :: struct {
+	type:    EventType,
+	handled: bool, // If true, propagation stops
+	payload: EventPayload,
+}
+
+// =============================================================================
+// UI System Types
+// =============================================================================
+
+ElementID :: distinct string
+
+ElementType :: enum {
+	Container,
+	Text,
+}
+
+LayoutDirection :: enum {
+	TopDown,
+	LeftRight,
+}
+
+// Cursor types for UI elements
+CursorType :: enum {
+	Default, // Default arrow cursor
+	Hand,    // Hand/pointer cursor (for clickable items)
+	Text,    // Text selection cursor (I-beam)
+	Resize,  // Resize cursor
+}
+
+// Sizing with explicit units
+SizingUnit :: enum {
+	Pixels,  // Fixed pixel value
+	Percent, // Percentage (0.0-1.0 range, where 1.0 = 100%)
+	Grow,    // Grow to fill available space
+	Fit,     // Fit to content size
+}
+
+Sizing :: struct {
+	unit:  SizingUnit,
+	value: f32, // Only used for Pixels and Percent
+}
+
+// Convenience constants
+SIZE_FULL :: Sizing {
+	unit  = .Percent,
+	value = 1.0,
+} // 100%
+
+Style :: struct {
+	width:           Sizing,
+	height:          Sizing,
+	color:           [4]f32,
+	padding:         [4]u16,
+	gap:             u16,
+	layout_dir:      LayoutDirection,
+	clip_vertical:   bool, // Enable vertical clipping (for scrollable containers)
+	clip_horizontal: bool, // Enable horizontal clipping
+}
+
+// UINode - Represents a node in the UI DOM tree
+UINode :: struct {
+	id:           ElementID,
+	type:         ElementType,
+	parent:       ^UINode,
+	children:     [dynamic]^UINode,
+	style:        Style,
+
+	// Content
+	text_content: string, // If Type == Text
+
+	// Behavior (Callbacks)
+	on_click:     proc(ctx: rawptr),
+	callback_ctx: rawptr, // Context to pass to on_click callback
+
+	// Cursor
+	cursor:       CursorType, // Cursor type when hovering over this element
+}
+
+// Component Registry ensures consistency
+ComponentType :: enum {
+	Button,
+	Checkbox,
+	Input,
+	Label,
+}
+
+// =============================================================================
+// Plugin System Types
+// =============================================================================
+
+// Plugin Handle - Unique identifier for a plugin instance
+PluginHandle :: distinct u64
+
+// Forward declaration for PluginContext (defined in api.odin)
+// We need this here because PluginVTable references it
+PluginContext :: struct {
+	plugin_id: string,
+	user_data: rawptr,
+	allocator: mem.Allocator,
+	api:       ^VesslAPI, // The API VTable for calling system functions
+}
+
+// Plugin VTable - Every plugin must implement these procedures
+PluginVTable :: struct {
+	// Lifecycle
+	init:     proc(ctx: ^PluginContext) -> bool,
+	update:   proc(ctx: ^PluginContext, dt: f32),
+	shutdown: proc(ctx: ^PluginContext),
+
+	// Event Handling (Return true to consume event)
+	on_event: proc(ctx: ^PluginContext, event: ^Event) -> bool,
+}
+
+// =============================================================================
+// Keyboard Shortcut Types
+// =============================================================================
+
+// Keyboard modifier flags - Platform-specific for clarity
+//
+// Windows/Linux modifiers:
+//   - Ctrl:  Control key (primary modifier for shortcuts like Ctrl+S)
+//   - Alt:   Alt key
+//   - Meta:  Windows key (rarely used in shortcuts)
+//   - Shift: Shift key (shared across platforms)
+//
+// macOS modifiers:
+//   - Cmd:     Command key (primary modifier for shortcuts like Cmd+S)
+//   - Opt:     Option key (equivalent to Alt on other platforms)
+//   - CtrlMac: Control key on Mac (rarely used, distinct from Cmd)
+//   - Shift:   Shift key (shared across platforms)
+KeyModifierFlag :: enum {
+	// Windows/Linux modifiers
+	Ctrl, // Control key on Windows/Linux
+	Alt,  // Alt key on Windows/Linux
+	Meta, // Windows key on Windows/Linux
+
+	// macOS modifiers
+	Cmd,     // Command key on macOS (⌘)
+	Opt,     // Option key on macOS (⌥)
+	CtrlMac, // Control key on macOS (⌃)
+
+	// Shared
+	Shift, // Shift key (all platforms)
+}
+
+// Bit set of modifier flags for combining modifiers
+KeyModifier :: bit_set[KeyModifierFlag]
+
+// =============================================================================
+// VesslAPI - The main API interface for plugins
+// =============================================================================
+
+// VesslAPI - VTable containing all system functions available to plugins
+// Plugins receive a pointer to this struct in their PluginContext
+VesslAPI :: struct {
+	// Event System
+	emit_event:              proc(ctx: ^PluginContext, type: EventType, payload: EventPayload) -> (^Event, bool),
+	dispatch_event:          proc(ctx: ^PluginContext, event: ^Event) -> bool,
+
+	// UI System
+	set_root_node:           proc(ctx: ^PluginContext, root: ^UINode),
+	find_node_by_id:         proc(ctx: ^PluginContext, id: ElementID) -> ^UINode,
+	attach_to_container:     proc(ctx: ^PluginContext, container_id: string, node: ^UINode) -> bool,
+
+	// Keyboard Shortcuts
+	register_shortcut:       proc(ctx: ^PluginContext, key: i32, modifiers: KeyModifier, event_name: string) -> bool,
+	unregister_shortcuts:    proc(ctx: ^PluginContext),
+
+	// Platform Features
+	show_folder_dialog:      proc(ctx: ^PluginContext, default_location: string),
+
+	// Internal pointers (opaque to plugins, used by API implementation)
+	_internal:               rawptr,
+}
+
