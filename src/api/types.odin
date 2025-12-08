@@ -22,6 +22,7 @@ EventType :: enum {
 	// Editor Events
 	Request_Open_File, // Request to open a file (emitted by file tree, handled by buffer manager)
 	Request_Editor_Attach, // Request for an editor plugin to attach to a container
+	Request_Editor_Detach, // Request for an editor plugin to detach/cleanup (buffer closing)
 	Buffer_Save,
 	Cursor_Move,
 
@@ -50,6 +51,10 @@ EventPayload_OpenFile :: struct {
 EventPayload_EditorAttach :: struct {
 	path:         string, // The file path being opened
 	container_id: string, // The container ID where the editor should attach
+}
+
+EventPayload_EditorDetach :: struct {
+	container_id: string, // The container ID of the editor being closed
 }
 
 EventPayload_File :: struct {
@@ -105,6 +110,7 @@ EventPayload :: union {
 	EventPayload_Layout,
 	EventPayload_OpenFile,
 	EventPayload_EditorAttach,
+	EventPayload_EditorDetach,
 	EventPayload_File,
 	EventPayload_Custom,
 	EventPayload_WorkingDirectory,

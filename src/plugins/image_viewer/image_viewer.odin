@@ -140,6 +140,25 @@ create_image_ui :: proc(state: ^ImageViewerState, path: string, container_id: st
 	return true
 }
 
+// Find and remove an open image entry by container_id
+remove_open_image :: proc(state: ^ImageViewerState, container_id: string) -> bool {
+	for entry, i in state.open_images {
+		if entry.container_id == container_id {
+			fmt.printf("[image_viewer] Cleaning up viewer for container: %s\n", container_id)
+
+			// Free allocated strings
+			delete(entry.path)
+			delete(entry.container_id)
+			// Note: UINodes are cleaned up by the tab container/renderer
+
+			// Remove from tracking array
+			ordered_remove(&state.open_images, i)
+			return true
+		}
+	}
+	return false
+}
+
 // Handle events
 image_viewer_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 	if event == nil do return false
@@ -169,6 +188,17 @@ image_viewer_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> boo
 			}
 
 			return false // Failed to create UI, let others try
+		}
+		return false
+
+	case .Request_Editor_Detach:
+		// Clean up when a buffer is being closed
+		#partial switch payload in event.payload {
+		case api.EventPayload_EditorDetach:
+			// Try to remove - returns true if we had an entry for this container
+			if remove_open_image(state, payload.container_id) {
+				return false // Don't consume - other editors might also need to clean up
+			}
 		}
 		return false
 	}

@@ -143,6 +143,25 @@ create_editor_ui :: proc(state: ^TextEditorState, path: string, container_id: st
 	return true
 }
 
+// Find and remove an open file entry by container_id
+remove_open_file :: proc(state: ^TextEditorState, container_id: string) -> bool {
+	for entry, i in state.open_files {
+		if entry.container_id == container_id {
+			fmt.printf("[text_editor] Cleaning up editor for container: %s\n", container_id)
+
+			// Free allocated strings
+			delete(entry.path)
+			delete(entry.container_id)
+			// Note: UINodes are cleaned up by the tab container/renderer
+
+			// Remove from tracking array
+			ordered_remove(&state.open_files, i)
+			return true
+		}
+	}
+	return false
+}
+
 // Handle events
 text_editor_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 	if event == nil do return false
@@ -164,6 +183,17 @@ text_editor_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool
 			}
 
 			return false // Failed to create UI
+		}
+		return false
+
+	case .Request_Editor_Detach:
+		// Clean up when a buffer is being closed
+		#partial switch payload in event.payload {
+		case api.EventPayload_EditorDetach:
+			// Try to remove - returns true if we had an entry for this container
+			if remove_open_file(state, payload.container_id) {
+				return false // Don't consume - other editors might also need to clean up
+			}
 		}
 		return false
 	}

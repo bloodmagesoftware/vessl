@@ -539,7 +539,7 @@ filetree_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 				}
 			}
 
-			return true // Consume the event
+			return false // Don't consume, let others (e.g. buffer_manager) handle it too
 		}
 		return false
 

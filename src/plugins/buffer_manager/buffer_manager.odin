@@ -205,6 +205,40 @@ buffer_manager_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 			return true // Consume the event
 		}
 		return false
+
+	case .Working_Directory_Changed:
+		// Close all open buffers when changing to a new directory
+		fmt.println("[buffer_manager] Working directory changed, closing all buffers")
+
+		// Notify editor plugins to detach and clean up (iterate in reverse to avoid index shifting)
+		for i := len(state.open_files) - 1; i >= 0; i -= 1 {
+			entry := state.open_files[i]
+
+			// Emit Request_Editor_Detach so editor plugins can clean up their resources
+			detach_payload := api.EventPayload_EditorDetach {
+				container_id = entry.container_id,
+			}
+			detach_event, _ := api.emit_event(state.ctx, .Request_Editor_Detach, detach_payload)
+			if detach_event != nil {
+				api.dispatch_event(state.ctx, detach_event)
+			}
+
+			// Remove the tab from the UI
+			api.tab_container_remove_tab(state.ctx, state.tab_container_id, i)
+		}
+
+		// Clean up the open_files tracking array
+		for entry in state.open_files {
+			delete(entry.path)
+			delete(entry.container_id)
+		}
+		clear(&state.open_files)
+
+		// Reset the tab ID counter
+		state.next_tab_id = 0
+
+		fmt.println("[buffer_manager] All buffers closed")
+		return false // Don't consume, let others handle it too
 	}
 
 	return false
