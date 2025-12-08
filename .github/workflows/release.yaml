@@ -76,6 +76,33 @@ jobs:
         shell: pwsh
         run: .\build_parsers.ps1
 
+      - name: Create Windows icon and resource (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          # Create temporary directory for icon generation
+          New-Item -ItemType Directory -Force -Path temp_icons
+          New-Item -ItemType Directory -Force -Path temp_res
+
+          # Convert SVG to multiple PNG sizes for ICO file
+          # Windows icon standard sizes: 16, 24, 32, 48, 64, 128, 256
+          $sizes = @(16, 24, 32, 48, 64, 128, 256)
+          foreach ($size in $sizes) {
+            magick convert -background none -resize "${size}x${size}" icon.svg "temp_icons/icon_${size}.png"
+          }
+
+          # Combine PNGs into a single ICO file
+          magick convert temp_icons/icon_16.png temp_icons/icon_24.png temp_icons/icon_32.png temp_icons/icon_48.png temp_icons/icon_64.png temp_icons/icon_128.png temp_icons/icon_256.png temp_res/icon.ico
+
+          # Generate the resource file
+          Set-Content -Path temp_res/resources.rc -Value "1 ICON `"icon.ico`""
+
+          # Compile the resource file
+          rc.exe /fo temp_res/resources.res temp_res/resources.rc
+
+          # Clean up temporary icons
+          Remove-Item -Recurse -Force temp_icons
+
       - name: Determine binary name
         id: binary
         shell: bash
@@ -98,7 +125,7 @@ jobs:
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
-        run: odin build src -out:${{ steps.binary.outputs.name }} -target:${{ matrix.odin-target }} -o:speed -subsystem:windows
+        run: odin build src -out:${{ steps.binary.outputs.name }} -target:${{ matrix.odin-target }} -o:speed -subsystem:windows -resource:temp_res/resources.res
 
       - name: Create macOS app bundle
         if: matrix.platform == 'macos'
