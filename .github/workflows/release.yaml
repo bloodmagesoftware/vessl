@@ -109,7 +109,7 @@ jobs:
           # Windows icon standard sizes: 16, 24, 32, 48, 64, 128, 256
           $sizes = @(16, 24, 32, 48, 64, 128, 256)
           foreach ($size in $sizes) {
-            magick -background none -resize "${size}x${size}" icon.svg "temp_icons/icon_${size}.png"
+            magick icon.svg -background none -resize "${size}x${size}" "temp_icons/icon_${size}.png"
           }
 
           # Combine PNGs into a single ICO file
