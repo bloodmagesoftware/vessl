@@ -211,11 +211,6 @@ build_filetree_ui :: proc(
 			return .Timeout
 		}
 
-		// Skip hidden files/directories (starting with .)
-		if len(entry.name) > 0 && entry.name[0] == '.' {
-			continue
-		}
-
 		full_path := filepath.join({dir_path, entry.name}, state.allocator)
 		defer delete(full_path)
 
