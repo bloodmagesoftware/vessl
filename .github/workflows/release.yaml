@@ -262,7 +262,7 @@ jobs:
             --output appimage
 
           # Rename the output AppImage to include target
-          mv ${{ env.APP_NAME }}*.AppImage ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
+          mv Vessl*.AppImage ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
 
       - name: Create archive (macOS)
         if: matrix.platform == 'macos'
