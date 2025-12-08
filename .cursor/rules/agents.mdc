@@ -1,0 +1,6 @@
+---
+description: Project documentation and codebase reference
+alwaysApply: true
+globs:
+---
+@AGENTS.md
