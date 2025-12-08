@@ -242,6 +242,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Create Release
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -251,6 +254,47 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
+
+      - name: Create Linux AppImages
+        run: |
+          # Download appimagetool
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+
+          for arch in linux-amd64 linux-arm64; do
+            # Extract binary from artifact
+            mkdir -p "${arch}-extract"
+            tar -xzf "release/${{ env.APP_NAME }}-${arch}.tar.gz" -C "${arch}-extract"
+
+            # Create AppDir structure
+            mkdir -p "${{ env.APP_NAME }}-${arch}.AppDir/usr/bin"
+            cp "${arch}-extract/${{ env.APP_NAME }}" "${{ env.APP_NAME }}-${arch}.AppDir/usr/bin/"
+
+            # Create .desktop file
+            cat > "${{ env.APP_NAME }}-${arch}.AppDir/${{ env.APP_NAME }}.desktop" <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=Vessl
+          Exec=${{ env.APP_NAME }}
+          Icon=${{ env.APP_NAME }}
+          Categories=Development;IDE;TextEditor;
+          Comment=High-performance extensible IDE
+          EOF
+
+            # Copy icon and create AppRun
+            cp icon.svg "${{ env.APP_NAME }}-${arch}.AppDir/${{ env.APP_NAME }}.svg"
+            ln -s "usr/bin/${{ env.APP_NAME }}" "${{ env.APP_NAME }}-${arch}.AppDir/AppRun"
+
+            # Determine runtime arch for AppImage
+            if [[ "$arch" == "linux-amd64" ]]; then
+              runtime_arch="x86_64"
+            else
+              runtime_arch="aarch64"
+            fi
+
+            # Build AppImage
+            ARCH=$runtime_arch ./appimagetool --appimage-extract-and-run "${{ env.APP_NAME }}-${arch}.AppDir" "release/${{ env.APP_NAME }}-${arch}.AppImage"
+          done
 
       - name: Generate checksums
         working-directory: release
