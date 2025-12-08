@@ -108,8 +108,8 @@ jobs:
 
           # Generate all required iconset files directly from SVG
           for size in 16 32 128 256 512; do
-            rsvg-convert -w $size -h $size icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
-            rsvg-convert -w $((size*2)) -h $((size*2)) icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}@2x.png
+            rsvg-convert -w $size -h $size assets/macos/icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
+            rsvg-convert -w $((size*2)) -h $((size*2)) assets/macos/icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}@2x.png
           done
 
           # Generate .icns file
