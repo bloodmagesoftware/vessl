@@ -6,7 +6,7 @@ import "core:mem"
 
 // Resize constants
 SIDEBAR_MIN_WIDTH :: 150 // Minimum sidebar width in pixels
-SIDEBAR_MAX_WIDTH :: 800 // Maximum sidebar width in pixels
+SIDEBAR_MAX_WIDTH_PERCENT :: 0.75 // Maximum sidebar width as percentage of window width (75%)
 SIDEBAR_DEFAULT_WIDTH :: 400 // Default sidebar width in pixels
 RESIZE_HANDLE_WIDTH :: 6 // Width of the resize handle in pixels
 
@@ -20,6 +20,8 @@ VSCodeDefaultState :: struct {
 	resize_handle: ^api.UINode, // The resize handle element
 	sidebar_width: f32, // Current sidebar width
 	is_resizing:   bool, // Whether we're currently resizing
+	// Window state (for dynamic max width calculation)
+	window_width:  i32, // Current window width in logical pixels
 }
 
 // Initialize the plugin
@@ -29,6 +31,10 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	state := new(VSCodeDefaultState, ctx.allocator)
 	state.allocator = ctx.allocator
 	state.containers = {}
+
+	// Get initial window size for dynamic max width calculation
+	window_width, _ := api.get_window_size(ctx)
+	state.window_width = window_width
 
 	ctx.user_data = state
 
@@ -195,11 +201,14 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 				// Update sidebar width based on mouse delta
 				new_width := state.sidebar_width + payload.delta_x
 
+				// Calculate dynamic max width (75% of window width)
+				max_width := f32(state.window_width) * SIDEBAR_MAX_WIDTH_PERCENT
+
 				// Clamp to min/max values
 				if new_width < SIDEBAR_MIN_WIDTH {
 					new_width = SIDEBAR_MIN_WIDTH
-				} else if new_width > SIDEBAR_MAX_WIDTH {
-					new_width = SIDEBAR_MAX_WIDTH
+				} else if new_width > max_width {
+					new_width = max_width
 				}
 
 				// Update state and UI
@@ -270,8 +279,23 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 		return false // Don't consume the event, let others see it
 
 	case .Window_Resize:
-		// Could update layout if needed
-		return false
+		// Update window width and clamp sidebar if needed
+		#partial switch payload in event.payload {
+		case api.EventPayload_WindowResize:
+			state.window_width = payload.width
+
+			// Calculate new max width (75% of window width)
+			max_width := f32(payload.width) * SIDEBAR_MAX_WIDTH_PERCENT
+
+			// If sidebar is wider than new max, clamp it
+			if state.sidebar_width > max_width {
+				state.sidebar_width = max_width
+				if state.sidebar_node != nil {
+					state.sidebar_node.style.width = api.sizing_px(int(max_width))
+				}
+			}
+		}
+		return false // Don't consume, let others handle it too
 	}
 
 	return false

@@ -14,6 +14,7 @@ APIInternalContext :: struct {
 	ui_api:             ^ui.UIPluginAPI,
 	platform_api:       ^ui.PlatformAPI,
 	component_registry: ^ui.ComponentRegistry,
+	window_ctx:         ^core.WindowContext,
 	allocator:          mem.Allocator,
 }
 
@@ -33,6 +34,7 @@ init_vessl_api :: proc(
 	ui_api: ^ui.UIPluginAPI,
 	platform_api: ^ui.PlatformAPI,
 	component_registry: ^ui.ComponentRegistry,
+	window_ctx: ^core.WindowContext,
 	allocator := context.allocator,
 ) -> ^api.VesslAPI {
 	// Create internal context
@@ -43,6 +45,7 @@ init_vessl_api :: proc(
 	g_api_internal.ui_api = ui_api
 	g_api_internal.platform_api = platform_api
 	g_api_internal.component_registry = component_registry
+	g_api_internal.window_ctx = window_ctx
 	g_api_internal.allocator = allocator
 
 	// Set up the VTable
@@ -69,6 +72,9 @@ init_vessl_api :: proc(
 
 		// Platform Features
 		show_folder_dialog       = api_show_folder_dialog,
+
+		// Window Information
+		get_window_size          = api_get_window_size,
 
 		// Internal pointer
 		_internal                = g_api_internal,
@@ -173,6 +179,15 @@ api_show_folder_dialog :: proc(ctx: ^api.PluginContext, default_location: string
 	if internal == nil || internal.platform_api == nil do return
 
 	ui.show_folder_dialog(internal.platform_api, default_location)
+}
+
+// Get window size in renderer/physical pixels (accounts for DPI scaling)
+// This matches the UI coordinate system used by Clay and mouse events
+api_get_window_size :: proc(ctx: ^api.PluginContext) -> (width: i32, height: i32) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil || internal.window_ctx == nil do return 0, 0
+
+	return core.get_renderer_output_size(internal.window_ctx)
 }
 
 // =============================================================================

@@ -159,6 +159,13 @@ show_folder_dialog :: proc(ctx: ^PluginContext, default_location: string = "") {
 	ctx.api.show_folder_dialog(ctx, default_location)
 }
 
+// Get the current window size in renderer/physical pixels (accounts for DPI)
+// This matches the UI coordinate system used by Clay and mouse events
+get_window_size :: proc(ctx: ^PluginContext) -> (width: i32, height: i32) {
+	if ctx == nil || ctx.api == nil || ctx.api.get_window_size == nil do return 0, 0
+	return ctx.api.get_window_size(ctx)
+}
+
 // =============================================================================
 // High-Level Component API Wrappers
 // =============================================================================

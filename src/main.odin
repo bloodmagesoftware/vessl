@@ -130,6 +130,7 @@ main :: proc() {
 		ui_api_ptr,
 		platform_api_ptr,
 		component_registry,
+		window_ctx,
 	)
 	if vessl_api == nil {
 		fmt.eprintln("Failed to initialize VesslAPI")
@@ -519,10 +520,11 @@ main :: proc() {
 				render_width, render_height := win.get_renderer_output_size(window_ctx)
 				ui.update_renderer_size(renderer_ctx, f32(render_width), f32(render_height))
 
-				// Emit Window_Resize event
-				resize_payload := core.EventPayload_Custom {
-					name = "resize",
-					data = nil,
+				// Emit Window_Resize event with renderer dimensions (physical pixels)
+				// This matches the UI coordinate system used by Clay and mouse events
+				resize_payload := api.EventPayload_WindowResize {
+					width  = render_width,
+					height = render_height,
 				}
 				resize_event, _ := core.emit_event_typed(eventbus, .Window_Resize, resize_payload)
 				if resize_event != nil {

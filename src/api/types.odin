@@ -95,6 +95,11 @@ EventPayload_MouseMove :: struct {
 	y:       f32, // Current mouse y position in window coordinates
 }
 
+EventPayload_WindowResize :: struct {
+	width:  i32, // New window width in renderer/physical pixels (accounts for DPI)
+	height: i32, // New window height in renderer/physical pixels (accounts for DPI)
+}
+
 // Event Payload Union - All possible payloads
 EventPayload :: union {
 	EventPayload_Layout,
@@ -107,6 +112,7 @@ EventPayload :: union {
 	EventPayload_MouseDown,
 	EventPayload_MouseUp,
 	EventPayload_MouseMove,
+	EventPayload_WindowResize,
 }
 
 // Event struct - Represents an event in the system
@@ -337,6 +343,9 @@ VesslAPI :: struct {
 
 	// Platform Features
 	show_folder_dialog:       proc(ctx: ^PluginContext, default_location: string),
+
+	// Window Information
+	get_window_size:          proc(ctx: ^PluginContext) -> (width: i32, height: i32),
 
 	// Internal pointers (opaque to plugins, used by API implementation)
 	_internal:                rawptr,
