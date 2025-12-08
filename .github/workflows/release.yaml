@@ -73,30 +73,20 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $SDL3_VERSION = "2025-12-07"
-          $SDL3_ARCH = "x64"
+          # Download SDL3 archive (contains SDL3, SDL3_ttf, and SDL3_image DLLs)
+          $url = "https://github.com/mmozeiko/build-sdl3/releases/download/2025-12-07/SDL3-x64-2025-12-07.zip"
+          Invoke-WebRequest -Uri $url -OutFile SDL3.zip
+          Expand-Archive -Path SDL3.zip -DestinationPath SDL3
 
-          # Create directories
-          New-Item -ItemType Directory -Force -Path temp_sdl
+          # Move required DLLs to dist
           New-Item -ItemType Directory -Force -Path dist
+          Move-Item "SDL3/SDL3-x64/bin/SDL3.dll" -Destination "dist/"
+          Move-Item "SDL3/SDL3-x64/bin/SDL3_ttf.dll" -Destination "dist/"
+          Move-Item "SDL3/SDL3-x64/bin/SDL3_image.dll" -Destination "dist/"
 
-          # Download SDL3, SDL3_ttf, and SDL3_image
-          $libs = @("SDL3", "SDL3_ttf", "SDL3_image")
-          foreach ($lib in $libs) {
-            $url = "https://github.com/mmozeiko/build-sdl3/releases/download/${SDL3_VERSION}/${lib}-${SDL3_ARCH}-${SDL3_VERSION}.zip"
-            $zipFile = "temp_sdl/${lib}.zip"
-            Write-Host "Downloading $url"
-            Invoke-WebRequest -Uri $url -OutFile $zipFile
-            Expand-Archive -Path $zipFile -DestinationPath "temp_sdl/${lib}" -Force
-          }
-
-          # Move only the required DLLs directly to dist
-          Move-Item "temp_sdl/SDL3/bin/SDL3.dll" -Destination "dist/"
-          Move-Item "temp_sdl/SDL3_ttf/bin/SDL3_ttf.dll" -Destination "dist/"
-          Move-Item "temp_sdl/SDL3_image/bin/SDL3_image.dll" -Destination "dist/"
-
-          # Clean up temp files
-          Remove-Item -Recurse -Force temp_sdl
+          # Clean up
+          Remove-Item SDL3.zip
+          Remove-Item -Recurse -Force SDL3
 
       - name: Build tree-sitter parsers (Linux/macOS)
         if: matrix.platform != 'windows'
