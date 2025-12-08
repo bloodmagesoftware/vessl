@@ -67,6 +67,35 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Download SDL3 DLLs (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $SDL3_VERSION = "2025-12-07"
+          $SDL3_ARCH = "x64"
+
+          # Create directories
+          New-Item -ItemType Directory -Force -Path temp_sdl
+          New-Item -ItemType Directory -Force -Path dist
+
+          # Download SDL3, SDL3_ttf, and SDL3_image
+          $libs = @("SDL3", "SDL3_ttf", "SDL3_image")
+          foreach ($lib in $libs) {
+            $url = "https://github.com/mmozeiko/build-sdl3/releases/download/${SDL3_VERSION}/${lib}-${SDL3_ARCH}-${SDL3_VERSION}.zip"
+            $zipFile = "temp_sdl/${lib}.zip"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -Uri $url -OutFile $zipFile
+            Expand-Archive -Path $zipFile -DestinationPath "temp_sdl/${lib}" -Force
+          }
+
+          # Move only the required DLLs directly to dist
+          Move-Item "temp_sdl/SDL3/bin/SDL3.dll" -Destination "dist/"
+          Move-Item "temp_sdl/SDL3_ttf/bin/SDL3_ttf.dll" -Destination "dist/"
+          Move-Item "temp_sdl/SDL3_image/bin/SDL3_image.dll" -Destination "dist/"
+
+          # Clean up temp files
+          Remove-Item -Recurse -Force temp_sdl
+
       - name: Build tree-sitter parsers (Linux/macOS)
         if: matrix.platform != 'windows'
         run: ./build_parsers.sh
