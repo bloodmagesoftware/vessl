@@ -8,6 +8,9 @@ on:
 env:
   APP_NAME: ${{ github.event.repository.name }}
   HOMEBREW_TAP: tsukinoko-kun/homebrew-tap
+  SDL_VERSION: 3.2.28
+  SDL_TTF_VERSION: 3.2.2
+  SDL_IMAGE_VERSION: 3.2.4
 
 permissions:
   contents: write
@@ -53,12 +56,72 @@ jobs:
 
       - name: Install dependencies (Linux)
         if: matrix.platform == 'linux'
-        uses: libsdl-org/setup-sdl@main
-        with:
-          install-linux-dependencies: true
-          version: 3-latest
-          version-sdl-ttf: 3-latest
-          version-sdl-image: 3-latest
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxss-dev libxxf86vm-dev libwayland-dev libxkbcommon-dev \
+            wayland-protocols libdecor-0-dev libpulse-dev libasound2-dev \
+            libudev-dev libdbus-1-dev libfreetype6-dev libharfbuzz-dev
+
+          # Clone all repos in parallel
+          git clone --depth 1 --branch release-${{ env.SDL_VERSION }} https://github.com/libsdl-org/SDL.git &
+          git clone --depth 1 --branch release-${{ env.SDL_TTF_VERSION }} https://github.com/libsdl-org/SDL_ttf.git &
+          git clone --depth 1 --branch release-${{ env.SDL_IMAGE_VERSION }} https://github.com/libsdl-org/SDL_image.git &
+          wait
+
+          NPROC=$(nproc)
+          INSTALL_PREFIX=/usr/local
+
+          # Build SDL first (required by SDL_ttf and SDL_image)
+          cmake -S SDL -B SDL/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+            -DSDL_SHARED=ON \
+            -DSDL_STATIC=OFF
+          cmake --build SDL/build -j$NPROC
+          sudo cmake --install SDL/build
+
+          # Update library cache so SDL_ttf and SDL_image can find SDL
+          sudo ldconfig
+
+          # Build SDL_ttf and SDL_image in parallel
+          (
+            cmake -S SDL_ttf -B SDL_ttf/build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+              -DSDL3TTF_SHARED=ON \
+              -DSDL3TTF_STATIC=OFF \
+              -DSDL3TTF_VENDORED=OFF
+            cmake --build SDL_ttf/build -j$NPROC
+            sudo cmake --install SDL_ttf/build
+          ) &
+          TTF_PID=$!
+
+          (
+            cmake -S SDL_image -B SDL_image/build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+              -DSDL3IMAGE_SHARED=ON \
+              -DSDL3IMAGE_STATIC=OFF \
+              -DSDL3IMAGE_VENDORED=OFF
+            cmake --build SDL_image/build -j$NPROC
+            sudo cmake --install SDL_image/build
+          ) &
+          IMG_PID=$!
+
+          # Wait for both to complete
+          wait $TTF_PID
+          wait $IMG_PID
+
+          # Final library cache update
+          sudo ldconfig
+
+          # Export paths for subsequent steps
+          echo "SDL3_ROOT=$INSTALL_PREFIX" >> $GITHUB_ENV
+          echo "SDL3_ttf_ROOT=$INSTALL_PREFIX" >> $GITHUB_ENV
+          echo "SDL3_image_ROOT=$INSTALL_PREFIX" >> $GITHUB_ENV
 
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
