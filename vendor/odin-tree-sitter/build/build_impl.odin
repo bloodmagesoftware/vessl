@@ -141,6 +141,14 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 	pp := paths()
 	parser_dir := filepath.join({pp.parsers_dir, name})
 
+	// Use a unique temp directory per parser to allow parallel installs
+	tmp_dir := filepath.join({pp.parsers_dir, fmt.tprintf("tmp-%s", name)})
+	when ODIN_OS == .Windows {
+		tmp_parser_path := filepath.join({tmp_dir, "parser.lib"})
+	} else {
+		tmp_parser_path := filepath.join({tmp_dir, "parser.a"})
+	}
+
 	if os.exists(parser_dir) {
 		if opts.clean {
 			rmrf(parser_dir)
@@ -151,37 +159,32 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 		}
 	}
 
-	exec("git", "clone", "--depth=1", parser, pp.tmp_dir) or_return
-	defer rmrf(pp.tmp_dir)
+	exec("git", "clone", "--depth=1", parser, tmp_dir) or_return
+	defer rmrf(tmp_dir)
 
 	// Section can probably be used by other langs.
 	c_files: [dynamic]string
 	ar_files: [dynamic]string
 
-	cwd, err := os.getwd(context.allocator)
-	if err != nil {
-		log.errorf("failed retrieving working directory: %v", os.error_string(err))
-		return false
-	}
-
+	// Use the tmp_dir for intermediate .o files to avoid conflicts during parallel builds
 	{
-		scanner_path := filepath.join({pp.tmp_dir, opts.path, "src", "scanner.c"})
+		scanner_path := filepath.join({tmp_dir, opts.path, "src", "scanner.c"})
 		if os.exists(scanner_path) {
 			append(&c_files, scanner_path)
 			when ODIN_OS == .Windows {
-				append(&ar_files, filepath.join({cwd, "scanner.obj"}))
+				append(&ar_files, filepath.join({tmp_dir, "scanner.obj"}))
 			} else {
-				append(&ar_files, filepath.join({cwd, "scanner.o"}))
+				append(&ar_files, filepath.join({tmp_dir, "scanner.o"}))
 			}
 		}
 
-		parser_path := filepath.join({pp.tmp_dir, opts.path, "src", "parser.c"})
+		parser_path := filepath.join({tmp_dir, opts.path, "src", "parser.c"})
 		if os.exists(parser_path) {
 			append(&c_files, parser_path)
 			when ODIN_OS == .Windows {
-				append(&ar_files, filepath.join({cwd, "parser.obj"}))
+				append(&ar_files, filepath.join({tmp_dir, "parser.obj"}))
 			} else {
-				append(&ar_files, filepath.join({cwd, "parser.o"}))
+				append(&ar_files, filepath.join({tmp_dir, "parser.o"}))
 			}
 		}
 
@@ -191,37 +194,42 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 		}
 	}
 
-	/* cc -c -I/src src/scanner.c src/parser.c */
+	/* cc -c -I/src -o output.o src/scanner.c (one file at a time for parallel safety) */
 	{
-		cmd: [dynamic]string
+		src_dir := filepath.join({tmp_dir, opts.path, "src"})
 
-		src_dir := filepath.join({pp.tmp_dir, opts.path, "src"})
+		for c_file, i in c_files {
+			cmd: [dynamic]string
 
-		when ODIN_OS == .Windows {
-			append(&cmd, "/Ox")
-			append(&cmd, "/EHsc")
-			append(&cmd, "/c")
-			append(&cmd, fmt.tprintf("/I%s", src_dir))
+			when ODIN_OS == .Windows {
+				append(&cmd, "/Ox")
+				append(&cmd, "/EHsc")
+				append(&cmd, "/c")
+				append(&cmd, fmt.tprintf("/I%s", src_dir))
+				append(&cmd, fmt.tprintf("/Fo%s", ar_files[i]))
 
-			if opts.debug {
-				append(&cmd, "/Z7")
+				if opts.debug {
+					append(&cmd, "/Z7")
+				}
+			} else {
+				append(&cmd, "-O3")
+				append(&cmd, fmt.tprintf("-I%s", src_dir))
+				append(&cmd, "-c")
+				append(&cmd, "-o")
+				append(&cmd, ar_files[i])
+
+				when ODIN_OS == .Darwin {
+					append(&cmd, fmt.tprintf("-mmacosx-version-min=%s", opts.minimum_os_version))
+				}
+
+				if opts.debug {
+					append(&cmd, "-g")
+				}
 			}
-		} else {
-			append(&cmd, "-O3")
-			append(&cmd, fmt.tprintf("-I%s", src_dir))
-			append(&cmd, "-c")
+			append(&cmd, c_file)
 
-			when ODIN_OS == .Darwin {
-				append(&cmd, fmt.tprintf("-mmacosx-version-min=%s", opts.minimum_os_version))
-			}
-
-			if opts.debug {
-				append(&cmd, "-g")
-			}
+			compile(&cmd) or_return
 		}
-		append(&cmd, ..c_files[:])
-
-		compile(&cmd) or_return
 	}
 	defer {for af in ar_files do rm_file(af)}
 
@@ -230,10 +238,10 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 		cmd: [dynamic]string
 
 		when ODIN_OS == .Windows {
-			append(&cmd, fmt.tprintf("/OUT:%s", pp.tmp_parser_path))
+			append(&cmd, fmt.tprintf("/OUT:%s", tmp_parser_path))
 		} else {
 			append(&cmd, "cr")
-			append(&cmd, pp.tmp_parser_path)
+			append(&cmd, tmp_parser_path)
 		}
 		append(&cmd, ..ar_files[:])
 
@@ -248,7 +256,7 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 
 	for lpath, i in ([]string{"LICENSE", "LICENSE.txt", "LICENSE.md", "LICENSE.rst"}) {
 		if cp_file(
-			filepath.join({pp.tmp_dir, lpath}),
+			filepath.join({tmp_dir, lpath}),
 			filepath.join({parser_dir, lpath}),
 			try_it = true,
 		) {
@@ -259,15 +267,15 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 	}
 
 	cp_file(
-		filepath.join({pp.tmp_dir, "README.md"}),
+		filepath.join({tmp_dir, "README.md"}),
 		filepath.join({parser_dir, "README.md"}),
 		try_it = true,
 	)
 
 	when ODIN_OS == .Windows {
-		cp_file(pp.tmp_parser_path, filepath.join({parser_dir, "parser.lib"}))
+		cp_file(tmp_parser_path, filepath.join({parser_dir, "parser.lib"}))
 	} else {
-		cp_file(pp.tmp_parser_path, filepath.join({parser_dir, "parser.a"}))
+		cp_file(tmp_parser_path, filepath.join({parser_dir, "parser.a"}))
 
 		if ODIN_OS == .Darwin && opts.debug {
 			/* dsymutil parser.o scanner.o -o parser.dSYM */
@@ -281,9 +289,9 @@ _install_parser :: proc(opts: Install_Parser_Opts) -> (ok: bool) {
 	}
 
 	// Try to find queries - first at {path}/queries, then fallback to root queries/
-	queries_src := filepath.join({pp.tmp_dir, opts.path, "queries"})
+	queries_src := filepath.join({tmp_dir, opts.path, "queries"})
 	if !os.exists(queries_src) && opts.path != "" {
-		queries_src = filepath.join({pp.tmp_dir, "queries"})
+		queries_src = filepath.join({tmp_dir, "queries"})
 	}
 	has_queries := cp(queries_src, filepath.join({parser_dir, "queries"}))
 
