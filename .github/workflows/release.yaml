@@ -357,8 +357,8 @@ jobs:
         run: |
           echo "macos_arm64=$(sha256sum artifacts/macos-arm64/${{ env.APP_NAME }}-macos-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "macos_arm64_cli=$(sha256sum artifacts/macos-arm64-cli/${{ env.APP_NAME }}-macos-arm64-cli.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "linux_amd64=$(sha256sum artifacts/linux-amd64/${{ env.APP_NAME }}-linux-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "linux_arm64=$(sha256sum artifacts/linux-arm64/${{ env.APP_NAME }}-linux-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(sha256sum artifacts/linux-amd64-appimage/${{ env.APP_NAME }}-linux-amd64.AppImage | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(sha256sum artifacts/linux-arm64-appimage/${{ env.APP_NAME }}-linux-arm64.AppImage | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Extract version
         id: version
@@ -397,11 +397,11 @@ jobs:
             version "${{ steps.version.outputs.number }}"
             license "MIT"
 
-            depends_on "sdl3"
-            depends_on "sdl3_ttf"
-            depends_on "sdl3_image"
-
             on_macos do
+              depends_on "sdl3"
+              depends_on "sdl3_ttf"
+              depends_on "sdl3_image"
+
               on_arm do
                 url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-macos-arm64-cli.tar.gz"
                 sha256 "${{ steps.sha.outputs.macos_arm64_cli }}"
@@ -410,17 +410,23 @@ jobs:
 
             on_linux do
               on_intel do
-                url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-linux-amd64.tar.gz"
+                url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-linux-amd64.AppImage"
                 sha256 "${{ steps.sha.outputs.linux_amd64 }}"
               end
               on_arm do
-                url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-linux-arm64.tar.gz"
+                url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-linux-arm64.AppImage"
                 sha256 "${{ steps.sha.outputs.linux_arm64 }}"
               end
             end
 
             def install
-              bin.install "${APP_NAME}"
+              if OS.mac?
+                bin.install "${APP_NAME}"
+              elsif Hardware::CPU.intel?
+                bin.install "${APP_NAME}-linux-amd64.AppImage" => "${APP_NAME}"
+              else
+                bin.install "${APP_NAME}-linux-arm64.AppImage" => "${APP_NAME}"
+              end
             end
 
             test do
