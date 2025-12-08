@@ -379,6 +379,9 @@ jobs:
             name "${APP_NAME}"
             desc "High-performance extensible IDE"
             homepage "https://github.com/${{ github.repository }}"
+            depends_on formula: "sdl3"
+            depends_on formula: "sdl3_ttf"
+            depends_on formula: "sdl3_image"
             app "${APP_NAME}.app"
           end
           CASK_EOF
@@ -393,6 +396,10 @@ jobs:
             homepage "https://github.com/${{ github.repository }}"
             version "${{ steps.version.outputs.number }}"
             license "MIT"
+
+            depends_on "sdl3"
+            depends_on "sdl3_ttf"
+            depends_on "sdl3_image"
 
             on_macos do
               on_arm do
