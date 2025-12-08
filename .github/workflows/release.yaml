@@ -109,11 +109,11 @@ jobs:
           # Windows icon standard sizes: 16, 24, 32, 48, 64, 128, 256
           $sizes = @(16, 24, 32, 48, 64, 128, 256)
           foreach ($size in $sizes) {
-            magick convert -background none -resize "${size}x${size}" icon.svg "temp_icons/icon_${size}.png"
+            magick -background none -resize "${size}x${size}" icon.svg "temp_icons/icon_${size}.png"
           }
 
           # Combine PNGs into a single ICO file
-          magick convert temp_icons/icon_16.png temp_icons/icon_24.png temp_icons/icon_32.png temp_icons/icon_48.png temp_icons/icon_64.png temp_icons/icon_128.png temp_icons/icon_256.png temp_res/icon.ico
+          magick temp_icons/icon_16.png temp_icons/icon_24.png temp_icons/icon_32.png temp_icons/icon_48.png temp_icons/icon_64.png temp_icons/icon_128.png temp_icons/icon_256.png temp_res/icon.ico
 
           # Generate the resource file
           Set-Content -Path temp_res/resources.rc -Value "1 ICON `"icon.ico`""
