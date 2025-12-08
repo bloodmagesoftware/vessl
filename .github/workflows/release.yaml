@@ -51,6 +51,12 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install optional SDL3_image format libraries (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjxl-dev libwebp-dev libavif-dev libtiff-dev
+
       - name: Install dependencies (Linux)
         if: matrix.platform == 'linux'
         uses: libsdl-org/setup-sdl@main
