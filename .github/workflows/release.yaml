@@ -103,13 +103,15 @@ jobs:
       - name: Create macOS app bundle
         if: matrix.platform == 'macos'
         run: |
+          # Extract version from tag (remove 'v' prefix)
+          VERSION="${GITHUB_REF_NAME#v}"
+
           # Create iconset directory
           mkdir -p ${{ env.APP_NAME }}.iconset
 
           # Generate all required iconset files directly from SVG
-          for size in 16 32 128 256 512; do
-            rsvg-convert -w $size -h $size assets/macos/icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
-            rsvg-convert -w $((size*2)) -h $((size*2)) assets/macos/icon.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}@2x.png
+          for size in 16 32 128 256 512 1024; do
+            rsvg-convert -w $size -h $size icon_macos.svg -o ${{ env.APP_NAME }}.iconset/icon_${size}x${size}.png
           done
 
           # Generate .icns file
@@ -119,10 +121,49 @@ jobs:
           mkdir -p ${{ env.APP_NAME }}.app/Contents/MacOS
           mkdir -p ${{ env.APP_NAME }}.app/Contents/Resources
 
-          # Copy files into bundle
+          # Copy binary and icon into bundle
           cp ${{ steps.binary.outputs.name }} ${{ env.APP_NAME }}.app/Contents/MacOS/
-          cp assets/macos/Info.plist ${{ env.APP_NAME }}.app/Contents/
           cp AppIcon.icns ${{ env.APP_NAME }}.app/Contents/Resources/
+
+          # Generate Info.plist
+          cat > ${{ env.APP_NAME }}.app/Contents/Info.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+              <dict>
+                  <key>CFBundleDevelopmentRegion</key>
+                  <string>en</string>
+                  <key>CFBundleExecutable</key>
+                  <string>${{ env.APP_NAME }}</string>
+                  <key>CFBundleIconFile</key>
+                  <string>AppIcon</string>
+                  <key>CFBundleIdentifier</key>
+                  <string>dev.frankmayer.${{ env.APP_NAME }}</string>
+                  <key>CFBundleInfoDictionaryVersion</key>
+                  <string>6.0</string>
+                  <key>CFBundleName</key>
+                  <string>Vessl</string>
+                  <key>CFBundleDisplayName</key>
+                  <string>Vessl</string>
+                  <key>CFBundlePackageType</key>
+                  <string>APPL</string>
+                  <key>CFBundleShortVersionString</key>
+                  <string>${VERSION}</string>
+                  <key>CFBundleVersion</key>
+                  <string>${VERSION}</string>
+                  <key>LSMinimumSystemVersion</key>
+                  <string>14.0</string>
+                  <key>NSHighResolutionCapable</key>
+                  <true />
+                  <key>NSSupportsAutomaticGraphicsSwitching</key>
+                  <true />
+                  <key>LSApplicationCategoryType</key>
+                  <string>public.app-category.developer-tools</string>
+                  <key>NSHumanReadableCopyright</key>
+                  <string>Copyright © 2025 Frank Mayer. All rights reserved.</string>
+              </dict>
+          </plist>
+          EOF
 
           # Clean up temporary files
           rm -rf ${{ env.APP_NAME }}.iconset AppIcon.icns
