@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - os: blacksmith-2vcpu-ubuntu-2404
@@ -23,11 +23,13 @@ jobs:
             odin-target: linux_amd64
             archive-ext: tar.gz
             platform: linux
+            linuxdeploy-arch: x86_64
           - os: blacksmith-2vcpu-ubuntu-2404-arm
             target: linux-arm64
             odin-target: linux_arm64
             archive-ext: tar.gz
             platform: linux
+            linuxdeploy-arch: aarch64
           - os: windows-latest
             target: windows-amd64
             odin-target: windows_amd64
@@ -231,6 +233,47 @@ jobs:
           mkdir -p dist
           cp ${{ steps.binary.outputs.name }} dist/
 
+      - name: Create AppImage (Linux)
+        if: matrix.platform == 'linux'
+        env:
+          LD_LIBRARY_PATH: ${{ env.SDL3_ROOT }}/lib:${{ env.SDL3_ttf_ROOT }}/lib:${{ env.SDL3_image_ROOT }}/lib
+        run: |
+          # Install librsvg for SVG to PNG conversion
+          sudo apt-get update && sudo apt-get install -y librsvg2-bin
+
+          # Download linuxdeploy for the current architecture
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.linuxdeploy-arch }}.AppImage" -O linuxdeploy
+          chmod +x linuxdeploy
+
+          # Create AppDir structure
+          mkdir -p ${{ env.APP_NAME }}.AppDir/usr/bin
+          cp ${{ steps.binary.outputs.name }} ${{ env.APP_NAME }}.AppDir/usr/bin/
+
+          # Create .desktop file
+          cat > ${{ env.APP_NAME }}.AppDir/${{ env.APP_NAME }}.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=Vessl
+          Exec=${{ env.APP_NAME }}
+          Icon=${{ env.APP_NAME }}
+          Categories=Development;IDE;TextEditor;
+          Comment=High-performance extensible IDE
+          EOF
+
+          # Convert SVG icon to 512px PNG (KDE Plasma has issues with SVG icons)
+          rsvg-convert -w 512 -h 512 icon.svg -o ${{ env.APP_NAME }}.AppDir/${{ env.APP_NAME }}.png
+
+          # Run linuxdeploy to bundle libraries and create AppImage
+          ./linuxdeploy --appimage-extract-and-run \
+            --appdir ${{ env.APP_NAME }}.AppDir \
+            --executable ${{ steps.binary.outputs.name }} \
+            --desktop-file ${{ env.APP_NAME }}.AppDir/${{ env.APP_NAME }}.desktop \
+            --icon-file ${{ env.APP_NAME }}.AppDir/${{ env.APP_NAME }}.png \
+            --output appimage
+
+          # Rename the output AppImage to include target
+          mv ${{ env.APP_NAME }}*.AppImage ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
+
       - name: Create archive (macOS)
         if: matrix.platform == 'macos'
         run: |
@@ -258,6 +301,14 @@ jobs:
           path: ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }}
           retention-days: 1
 
+      - name: Upload AppImage artifact (Linux)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-appimage
+          path: ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
+          retention-days: 1
+
       - name: Upload CLI artifact (macOS)
         if: matrix.platform == 'macos'
         uses: actions/upload-artifact@v4
@@ -282,48 +333,7 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
-
-      - name: Create Linux AppImages
-        run: |
-          # Download appimagetool
-          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
-          chmod +x appimagetool
-
-          for arch in linux-amd64 linux-arm64; do
-            # Extract binary from artifact
-            mkdir -p "${arch}-extract"
-            tar -xzf "release/${{ env.APP_NAME }}-${arch}.tar.gz" -C "${arch}-extract"
-
-            # Create AppDir structure
-            mkdir -p "${{ env.APP_NAME }}-${arch}.AppDir/usr/bin"
-            cp "${arch}-extract/${{ env.APP_NAME }}" "${{ env.APP_NAME }}-${arch}.AppDir/usr/bin/"
-
-            # Create .desktop file
-            cat > "${{ env.APP_NAME }}-${arch}.AppDir/${{ env.APP_NAME }}.desktop" <<EOF
-          [Desktop Entry]
-          Type=Application
-          Name=Vessl
-          Exec=${{ env.APP_NAME }}
-          Icon=${{ env.APP_NAME }}
-          Categories=Development;IDE;TextEditor;
-          Comment=High-performance extensible IDE
-          EOF
-
-            # Copy icon and create AppRun
-            cp icon.svg "${{ env.APP_NAME }}-${arch}.AppDir/${{ env.APP_NAME }}.svg"
-            ln -s "usr/bin/${{ env.APP_NAME }}" "${{ env.APP_NAME }}-${arch}.AppDir/AppRun"
-
-            # Determine runtime arch for AppImage
-            if [[ "$arch" == "linux-amd64" ]]; then
-              runtime_arch="x86_64"
-            else
-              runtime_arch="aarch64"
-            fi
-
-            # Build AppImage
-            ARCH=$runtime_arch ./appimagetool --appimage-extract-and-run "${{ env.APP_NAME }}-${arch}.AppDir" "release/${{ env.APP_NAME }}-${arch}.AppImage"
-          done
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.AppImage" \) -exec mv {} release/ \;
 
       - name: Generate checksums
         working-directory: release
