@@ -7,6 +7,7 @@ on:
 
 env:
   APP_NAME: ${{ github.event.repository.name }}
+  DISPLAY_NAME: Vessl
   HOMEBREW_TAP: tsukinoko-kun/homebrew-tap
 
 permissions:
@@ -172,15 +173,15 @@ jobs:
           iconutil -c icns ${{ env.APP_NAME }}.iconset -o AppIcon.icns
 
           # Create app bundle structure
-          mkdir -p ${{ env.APP_NAME }}.app/Contents/MacOS
-          mkdir -p ${{ env.APP_NAME }}.app/Contents/Resources
+          mkdir -p ${{ env.DISPLAY_NAME }}.app/Contents/MacOS
+          mkdir -p ${{ env.DISPLAY_NAME }}.app/Contents/Resources
 
           # Copy binary and icon into bundle
-          cp ${{ steps.binary.outputs.name }} ${{ env.APP_NAME }}.app/Contents/MacOS/
-          cp AppIcon.icns ${{ env.APP_NAME }}.app/Contents/Resources/
+          cp ${{ steps.binary.outputs.name }} ${{ env.DISPLAY_NAME }}.app/Contents/MacOS/
+          cp AppIcon.icns ${{ env.DISPLAY_NAME }}.app/Contents/Resources/
 
           # Generate Info.plist
-          cat > ${{ env.APP_NAME }}.app/Contents/Info.plist <<EOF
+          cat > ${{ env.DISPLAY_NAME }}.app/Contents/Info.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -196,9 +197,9 @@ jobs:
                   <key>CFBundleInfoDictionaryVersion</key>
                   <string>6.0</string>
                   <key>CFBundleName</key>
-                  <string>Vessl</string>
+                  <string>${{ env.DISPLAY_NAME }}</string>
                   <key>CFBundleDisplayName</key>
-                  <string>Vessl</string>
+                  <string>${{ env.DISPLAY_NAME }}</string>
                   <key>CFBundlePackageType</key>
                   <string>APPL</string>
                   <key>CFBundleShortVersionString</key>
@@ -249,7 +250,7 @@ jobs:
           cat > ${{ env.APP_NAME }}.AppDir/${{ env.APP_NAME }}.desktop <<EOF
           [Desktop Entry]
           Type=Application
-          Name=Vessl
+          Name=${{ env.DISPLAY_NAME }}
           Exec=${{ env.APP_NAME }}
           Icon=${{ env.APP_NAME }}
           Categories=Development;IDE;TextEditor;
@@ -268,13 +269,13 @@ jobs:
             --output appimage
 
           # Rename the output AppImage to include target
-          mv Vessl*.AppImage ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
+          mv ${{ env.DISPLAY_NAME }}*.AppImage ${{ env.APP_NAME }}-${{ matrix.target }}.AppImage
 
       - name: Create archive (macOS)
         if: matrix.platform == 'macos'
         run: |
           # App bundle archive
-          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }} ${{ env.APP_NAME }}.app
+          tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}.${{ matrix.archive-ext }} ${{ env.DISPLAY_NAME }}.app
           # CLI binary archive for Homebrew Formula (assets embedded in binary)
           tar -czvf ${{ env.APP_NAME }}-${{ matrix.target }}-cli.${{ matrix.archive-ext }} ${{ steps.binary.outputs.name }}
 
@@ -379,13 +380,14 @@ jobs:
               sha256 "${{ steps.sha.outputs.macos_arm64 }}"
               url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APP_NAME}-macos-arm64.tar.gz"
             end
-            name "${APP_NAME}"
+            name "${{ env.DISPLAY_NAME }}"
             desc "High-performance extensible IDE"
             homepage "https://github.com/${{ github.repository }}"
             depends_on formula: "sdl3"
             depends_on formula: "sdl3_ttf"
             depends_on formula: "sdl3_image"
-            app "${APP_NAME}.app"
+            app "${{ env.DISPLAY_NAME }}.app"
+            binary "#{appdir}/${{ env.DISPLAY_NAME }}.app/Contents/MacOS/${APP_NAME}", target: "${APP_NAME}"
           end
           CASK_EOF
 
