@@ -174,6 +174,21 @@ get_window_size :: proc(ctx: ^PluginContext) -> (width: i32, height: i32) {
 	return ctx.api.get_window_size(ctx)
 }
 
+// Measure text dimensions using the current font
+// Returns the width and height in pixels that the text would occupy when rendered
+measure_text :: proc(ctx: ^PluginContext, text: string) -> (width: f32, height: f32) {
+	if ctx == nil || ctx.api == nil || ctx.api.measure_text == nil do return 0, 0
+	return ctx.api.measure_text(ctx, text)
+}
+
+// Get the scroll position of a scrollable container
+// Returns (0, 0) if the element is not found or not scrollable
+// Note: scroll position is typically negative (e.g., scrolled down = negative y)
+get_scroll_position :: proc(ctx: ^PluginContext, element_id: ElementID) -> (x: f32, y: f32) {
+	if ctx == nil || ctx.api == nil || ctx.api.get_scroll_position == nil do return 0, 0
+	return ctx.api.get_scroll_position(ctx, element_id)
+}
+
 // =============================================================================
 // High-Level Component API Wrappers
 // =============================================================================

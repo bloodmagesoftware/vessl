@@ -85,3 +85,17 @@ set_root_node_api :: proc(uiapi: ^UIPluginAPI, root: ^api.UINode) {
 	uiapi.renderer_ctx.root_node = root
 	uiapi.root_node = root
 }
+
+// Measure text dimensions using the current font
+// Returns width and height in pixels
+measure_text :: proc(uiapi: ^UIPluginAPI, text: string) -> (width: f32, height: f32) {
+	if uiapi == nil || uiapi.renderer_ctx == nil do return 0, 0
+	return measure_text_dimensions(uiapi.renderer_ctx, text)
+}
+
+// Get scroll position for a scrollable container
+// Returns (0, 0) if not found or not scrollable
+get_scroll_position :: proc(uiapi: ^UIPluginAPI, element_id: api.ElementID) -> (x: f32, y: f32) {
+	if uiapi == nil || uiapi.renderer_ctx == nil do return 0, 0
+	return get_element_scroll_position(uiapi.renderer_ctx, element_id)
+}

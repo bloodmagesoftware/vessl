@@ -85,6 +85,12 @@ init_vessl_api :: proc(
 		// Window Information
 		get_window_size          = api_get_window_size,
 
+		// Text Measurement
+		measure_text             = api_measure_text,
+
+		// Scroll Position
+		get_scroll_position      = api_get_scroll_position,
+
 		// Internal pointer
 		_internal                = g_api_internal,
 	}
@@ -209,6 +215,28 @@ api_get_window_size :: proc(ctx: ^api.PluginContext) -> (width: i32, height: i32
 	if internal == nil || internal.window_ctx == nil do return 0, 0
 
 	return core.get_renderer_output_size(internal.window_ctx)
+}
+
+// Measure text dimensions using the current font
+api_measure_text :: proc(ctx: ^api.PluginContext, text: string) -> (width: f32, height: f32) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil || internal.ui_api == nil do return 0, 0
+
+	return ui.measure_text(internal.ui_api, text)
+}
+
+// Get scroll position for a scrollable container
+api_get_scroll_position :: proc(
+	ctx: ^api.PluginContext,
+	element_id: api.ElementID,
+) -> (
+	x: f32,
+	y: f32,
+) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil || internal.ui_api == nil do return 0, 0
+
+	return ui.get_scroll_position(internal.ui_api, element_id)
 }
 
 // =============================================================================

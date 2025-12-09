@@ -199,6 +199,10 @@ Style :: struct {
 	clip_vertical:   bool, // Enable vertical clipping (for scrollable containers)
 	clip_horizontal: bool, // Enable horizontal clipping
 	hidden:          bool, // If true, this element and its children are not rendered
+	// Position offset - allows shifting an element from its normal flow position
+	// Useful for overlay elements like cursors that need precise pixel positioning
+	offset_x:        f32, // Horizontal offset in pixels from normal position
+	offset_y:        f32, // Vertical offset in pixels from normal position
 }
 
 // UINode - Represents a node in the UI DOM tree
@@ -370,6 +374,12 @@ VesslAPI :: struct {
 
 	// Window Information
 	get_window_size:          proc(ctx: ^PluginContext) -> (width: i32, height: i32),
+
+	// Text Measurement
+	measure_text:             proc(ctx: ^PluginContext, text: string) -> (width: f32, height: f32),
+
+	// Scroll Position
+	get_scroll_position:      proc(ctx: ^PluginContext, element_id: ElementID) -> (x: f32, y: f32),
 
 	// Internal pointers (opaque to plugins, used by API implementation)
 	_internal:                rawptr,

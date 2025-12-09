@@ -581,6 +581,22 @@ node.style.padding = {8, 8, 8, 8}
 node.style.gap = 4
 ```
 
+### 9a. Position Offsets
+
+For precise positioning (e.g., cursors, overlays), use offset values to shift an element from its normal flow position:
+
+```odin
+// Offset the element from its normal position (in pixels)
+node.style.offset_x = 50.0 // Move 50 pixels to the right
+node.style.offset_y = 20.0 // Move 20 pixels down
+
+// This is useful for overlay elements like cursors that need precise pixel positioning
+cursor.style.offset_x = f32(col * CELL_WIDTH)
+cursor.style.offset_y = f32(row * CELL_HEIGHT)
+```
+
+Elements with non-zero offsets are rendered as floating elements, positioned relative to their parent's top-left corner. This allows creating overlay UI like terminal cursors, tooltips, or selection highlights.
+
 ### 10. Scrollable Containers
 
 Enable clipping for scrollable areas:
@@ -954,7 +970,7 @@ EventPayload_MouseMove :: struct { delta_x: f32, delta_y: f32, x: f32, y: f32 }
 ElementID :: distinct string
 ElementType :: enum { Container, Text }
 UINode :: struct { id: ElementID, type: ElementType, style: Style, ... }
-Style :: struct { width: Sizing, height: Sizing, color: [4]f32, hidden: bool, ... }
+Style :: struct { width: Sizing, height: Sizing, color: [4]f32, hidden: bool, offset_x: f32, offset_y: f32, ... }
 Sizing :: struct { unit: SizingUnit, value: f32 }
 CursorType :: enum { Default, Hand, Text, Resize }
 

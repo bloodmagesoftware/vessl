@@ -612,6 +612,9 @@ build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: boo
 			}
 		}
 
+		// Check if this element has position offsets (use floating for precise positioning)
+		has_offset := node.style.offset_x != 0 || node.style.offset_y != 0
+
 		element_config := clay.ElementDeclaration {
 			layout = {
 				sizing = {width = width_sizing, height = height_sizing},
@@ -626,6 +629,12 @@ build_clay_ui :: proc(ctx: ^RendererContext, node: ^api.UINode, check_hover: boo
 				vertical = node.style.clip_vertical,
 				childOffset = child_offset,
 			},
+			floating = has_offset ? clay.FloatingElementConfig {
+				offset = {node.style.offset_x, node.style.offset_y},
+				attachTo = .Parent,
+				attachment = {element = .LeftTop, parent = .LeftTop},
+				zIndex = 1, // Render above siblings
+			} : {},
 		}
 
 		if clay.UI(clay_id)(element_config) {
@@ -1070,6 +1079,51 @@ draw_text_bitmap :: proc(
 		char := u8(text[i])
 		draw_char(ctx, char_x, start_y, char, color)
 	}
+}
+
+// Measure text dimensions using the current font
+// Returns width and height in pixels
+measure_text_dimensions :: proc(ctx: ^RendererContext, text: string) -> (width: f32, height: f32) {
+	if ctx == nil || ctx.default_font == nil || ctx.text_engine == nil do return 0, 0
+	if len(text) == 0 do return 0, 0
+
+	text_cstr := strings.clone_to_cstring(text)
+	defer delete(text_cstr)
+
+	temp_text := ttf.CreateText(ctx.text_engine, ctx.default_font, text_cstr, 0)
+	if temp_text == nil do return 0, 0
+	defer ttf.DestroyText(temp_text)
+
+	w, h: i32
+	ttf.GetTextSize(temp_text, &w, &h)
+	return f32(w), f32(h)
+}
+
+// Get scroll position for an element
+// Returns (0, 0) if element not found or not scrollable
+get_element_scroll_position :: proc(
+	ctx: ^RendererContext,
+	element_id: api.ElementID,
+) -> (
+	x: f32,
+	y: f32,
+) {
+	if ctx == nil || ctx.clay_ctx == nil do return 0, 0
+
+	clay.SetCurrentContext(ctx.clay_ctx)
+
+	// Get Clay element ID
+	node_id_str := string(element_id)
+	clay_id := clay.ID(node_id_str)
+
+	// Get scroll container data
+	scroll_data := clay.GetScrollContainerData(clay_id)
+	if scroll_data.found && scroll_data.scrollPosition != nil {
+		pos := scroll_data.scrollPosition^
+		return pos[0], pos[1]
+	}
+
+	return 0, 0
 }
 
 // Cleanup renderer

@@ -12,38 +12,57 @@ import "core:unicode/utf8"
 // Terminal dimensions
 TERMINAL_DEFAULT_ROWS :: 24
 TERMINAL_DEFAULT_COLS :: 80
-CELL_WIDTH :: 10 // Approximate character width in pixels (monospace)
-CELL_HEIGHT :: 20 // Line height in pixels
+// Default cell dimensions (will be overridden by actual font measurement)
+DEFAULT_CELL_WIDTH :: 19
+DEFAULT_CELL_HEIGHT :: 38
+
+// Cursor blink timing constants
+CURSOR_BLINK_INTERVAL :: 0.53 // Time in seconds for each blink phase (on/off)
+CURSOR_TYPING_TIMEOUT :: 0.5 // Time in seconds after last input before cursor starts blinking
 
 // Terminal state
 TerminalState :: struct {
-	ctx:             ^api.PluginContext,
-	allocator:       mem.Allocator,
+	ctx:                ^api.PluginContext,
+	allocator:          mem.Allocator,
 
 	// VTerm state
-	vt:              ^vterm.VTerm,
-	vt_screen:       ^vterm.VTermScreen,
-	vt_state:        ^vterm.VTermState,
+	vt:                 ^vterm.VTerm,
+	vt_screen:          ^vterm.VTermScreen,
+	vt_state:           ^vterm.VTermState,
 
 	// Terminal dimensions
-	rows:            int,
-	cols:            int,
+	rows:               int,
+	cols:               int,
+
+	// Cell dimensions (measured from actual font)
+	cell_width:         f32,
+	cell_height:        f32,
 
 	// PTY handle
-	pty:             PTYHandle,
-	pty_initialized: bool,
+	pty:                PTYHandle,
+	pty_initialized:    bool,
 
 	// UI nodes
-	container_id:    string,
-	row_nodes:       [dynamic]^api.UINode, // One text node per row
-	dirty_rows:      [dynamic]bool, // Track which rows need redrawing
+	container_id:       string,
+	terminal_root_id:   api.ElementID, // ID of the terminal root container (for scroll queries)
+	row_nodes:          [dynamic]^api.UINode, // One text node per row
+	dirty_rows:         [dynamic]bool, // Track which rows need redrawing
+
+	// Cursor state
+	cursor_row:         int, // Current cursor row position
+	cursor_col:         int, // Current cursor column position
+	cursor_node:        ^api.UINode, // UI node for the cursor rectangle
+	cursor_blink_phase: bool, // Current blink phase (true = visible, false = hidden)
+	last_input_time:    f32, // Total time when last input occurred
+	total_time:         f32, // Total accumulated time since init
+	blink_timer:        f32, // Accumulator for blink timing
 
 	// Focus state
-	has_focus:       bool,
+	has_focus:          bool,
 
 	// Container dimensions for resize detection
-	last_width:      f32,
-	last_height:     f32,
+	last_width:         f32,
+	last_height:        f32,
 }
 
 // Screen callbacks for libvterm
@@ -72,6 +91,7 @@ movecursor_callback :: proc "c" (
 	visible: c.int,
 	user: rawptr,
 ) -> c.int {
+	context = runtime.default_context()
 	// Mark both old and new cursor rows as dirty
 	state := cast(^TerminalState)user
 	if state == nil do return 0
@@ -82,6 +102,10 @@ movecursor_callback :: proc "c" (
 	if int(pos.row) < len(state.dirty_rows) {
 		state.dirty_rows[int(pos.row)] = true
 	}
+
+	// Update cursor position (visual update happens in update_cursor_position)
+	state.cursor_row = int(pos.row)
+	state.cursor_col = int(pos.col)
 
 	return 0
 }
@@ -97,6 +121,19 @@ terminal_init :: proc(ctx: ^api.PluginContext) -> bool {
 	state.cols = TERMINAL_DEFAULT_COLS
 	state.has_focus = false
 	state.pty_initialized = false
+
+	// Initialize cell dimensions with defaults (will be measured later)
+	state.cell_width = DEFAULT_CELL_WIDTH
+	state.cell_height = DEFAULT_CELL_HEIGHT
+
+	// Initialize cursor state
+	state.cursor_row = 0
+	state.cursor_col = 0
+	state.cursor_node = nil
+	state.cursor_blink_phase = true // Start visible
+	state.last_input_time = 0
+	state.total_time = 0
+	state.blink_timer = 0
 
 	ctx.user_data = state
 
@@ -193,8 +230,27 @@ create_terminal_ui :: proc(state: ^TerminalState, container_id: string) -> bool 
 
 	state.container_id = strings.clone(container_id, state.allocator)
 
+	// Measure actual font dimensions using a reference character
+	// Use "M" as it's typically the widest character in monospace fonts
+	char_width, char_height := api.measure_text(state.ctx, "M")
+	if char_width > 0 && char_height > 0 {
+		state.cell_width = char_width
+		state.cell_height = char_height
+		fmt.printf("[terminal] Measured cell dimensions: %.1f x %.1f\n", char_width, char_height)
+	} else {
+		fmt.printf(
+			"[terminal] Using default cell dimensions: %.1f x %.1f\n",
+			state.cell_width,
+			state.cell_height,
+		)
+	}
+
+	cell_width_int := int(state.cell_width)
+	cell_height_int := int(state.cell_height)
+
 	// Create the main terminal container
 	terminal_root_id := api.ElementID(fmt.tprintf("terminal_root_%s", container_id))
+	state.terminal_root_id = terminal_root_id // Store for scroll queries
 	terminal_root := api.create_node(terminal_root_id, .Container, state.allocator)
 	terminal_root.style.width = api.SIZE_FULL
 	terminal_root.style.height = api.sizing_grow()
@@ -202,6 +258,19 @@ create_terminal_ui :: proc(state: ^TerminalState, container_id: string) -> bool 
 	terminal_root.style.layout_dir = .TopDown
 	terminal_root.style.padding = {8, 8, 8, 8}
 	terminal_root.style.clip_vertical = true
+
+	// Create cursor rectangle node (added first so it's rendered, uses floating for positioning)
+	cursor_id := api.ElementID(fmt.tprintf("terminal_cursor_%s", container_id))
+	cursor_node := api.create_node(cursor_id, .Container, state.allocator)
+	cursor_node.style.width = api.sizing_px(cell_width_int)
+	cursor_node.style.height = api.sizing_px(cell_height_int)
+	cursor_node.style.color = {0.8, 0.8, 0.8, 0.8} // Semi-transparent light cursor
+	// Position at initial cursor location (0,0) + padding offset
+	cursor_node.style.offset_x = 8 // Padding left
+	cursor_node.style.offset_y = 8 // Padding top
+	cursor_node.style.hidden = false
+	api.add_child(terminal_root, cursor_node)
+	state.cursor_node = cursor_node
 
 	// Create row nodes (text nodes for each line)
 	if state.row_nodes != nil {
@@ -213,7 +282,7 @@ create_terminal_ui :: proc(state: ^TerminalState, container_id: string) -> bool 
 		row_id := api.ElementID(fmt.tprintf("terminal_row_%s_%d", container_id, row))
 		row_node := api.create_node(row_id, .Text, state.allocator)
 		row_node.style.width = api.SIZE_FULL
-		row_node.style.height = api.sizing_px(CELL_HEIGHT)
+		row_node.style.height = api.sizing_px(cell_height_int)
 		row_node.style.color = {0.9, 0.9, 0.9, 1.0} // Light text
 		row_node.text_content = "" // Empty initially
 
@@ -312,6 +381,11 @@ process_pty_output :: proc(state: ^TerminalState) {
 send_key_input :: proc(state: ^TerminalState, key: i32, modifiers: api.KeyModifier) {
 	if state == nil || state.vt == nil do return
 
+	// Record input time for cursor blink logic
+	state.last_input_time = state.total_time
+	state.cursor_blink_phase = true // Show cursor immediately on input
+	state.blink_timer = 0 // Reset blink timer
+
 	// Convert modifiers
 	vt_mod: vterm.VTermModifier = .NONE
 	if .Shift in modifiers {
@@ -338,6 +412,11 @@ send_key_input :: proc(state: ^TerminalState, key: i32, modifiers: api.KeyModifi
 // Send text input to PTY via vterm
 send_text_input :: proc(state: ^TerminalState, text: string) {
 	if state == nil || state.vt == nil do return
+
+	// Record input time for cursor blink logic
+	state.last_input_time = state.total_time
+	state.cursor_blink_phase = true // Show cursor immediately on input
+	state.blink_timer = 0 // Reset blink timer
 
 	// Convert modifiers (none for text input)
 	for r in text {
@@ -442,8 +521,8 @@ resize_terminal :: proc(state: ^TerminalState, width, height: f32) {
 	if state == nil do return
 
 	// Calculate new dimensions based on container size
-	new_cols := max(int(width / CELL_WIDTH), 20)
-	new_rows := max(int(height / CELL_HEIGHT), 5)
+	new_cols := max(int(width / state.cell_width), 20)
+	new_rows := max(int(height / state.cell_height), 5)
 
 	if new_cols == state.cols && new_rows == state.rows {
 		return // No change needed
@@ -487,6 +566,67 @@ terminal_update :: proc(ctx: ^api.PluginContext, dt: f32) {
 
 	// Update dirty rows
 	update_dirty_rows(state)
+
+	// Update cursor position (accounts for scroll)
+	update_cursor_position(state)
+
+	// Update cursor blink logic
+	update_cursor_blink(state, dt)
+}
+
+// Update cursor visual position accounting for scroll offset
+update_cursor_position :: proc(state: ^TerminalState) {
+	if state == nil || state.cursor_node == nil || state.ctx == nil do return
+
+	// Get current scroll position of the terminal container
+	scroll_x, scroll_y := api.get_scroll_position(state.ctx, state.terminal_root_id)
+
+	// Calculate cursor position:
+	// Base position = padding (8) + col/row * cell_size
+	// Apply scroll offset (scroll_y is negative when scrolled down)
+	base_x := 8 + f32(state.cursor_col) * state.cell_width
+	base_y := 8 + f32(state.cursor_row) * state.cell_height
+
+	// Apply scroll offset
+	state.cursor_node.style.offset_x = base_x + scroll_x
+	state.cursor_node.style.offset_y = base_y + scroll_y
+}
+
+// Update cursor blink state
+update_cursor_blink :: proc(state: ^TerminalState, dt: f32) {
+	if state == nil || state.cursor_node == nil do return
+
+	// Accumulate total time
+	state.total_time += dt
+
+	// Check if we're in typing mode (recent input) or idle mode
+	time_since_input := state.total_time - state.last_input_time
+	is_typing := time_since_input < CURSOR_TYPING_TIMEOUT
+
+	old_visible := state.cursor_blink_phase
+
+	if is_typing {
+		// Typing mode: cursor always visible
+		state.cursor_blink_phase = true
+		state.blink_timer = 0
+	} else {
+		// Idle mode: blink the cursor
+		state.blink_timer += dt
+		if state.blink_timer >= CURSOR_BLINK_INTERVAL {
+			state.blink_timer -= CURSOR_BLINK_INTERVAL
+			state.cursor_blink_phase = !state.cursor_blink_phase
+		}
+	}
+
+	// Update cursor visibility based on blink phase and focus
+	// Cursor is visible if: has_focus AND cursor_blink_phase
+	should_show := state.has_focus && state.cursor_blink_phase
+	state.cursor_node.style.hidden = !should_show
+
+	// Request redraw if visibility changed
+	if old_visible != state.cursor_blink_phase {
+		api.request_redraw(state.ctx)
+	}
 }
 
 // Shutdown the plugin
