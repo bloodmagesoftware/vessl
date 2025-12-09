@@ -90,6 +90,10 @@ init_vessl_api :: proc(
 
 		// Scroll Position
 		get_scroll_position      = api_get_scroll_position,
+		set_scroll_position      = api_set_scroll_position,
+
+		// Element Bounds
+		get_element_bounds       = api_get_element_bounds,
 
 		// Internal pointer
 		_internal                = g_api_internal,
@@ -237,6 +241,36 @@ api_get_scroll_position :: proc(
 	if internal == nil || internal.ui_api == nil do return 0, 0
 
 	return ui.get_scroll_position(internal.ui_api, element_id)
+}
+
+// Set scroll position for a scrollable container
+api_set_scroll_position :: proc(
+	ctx: ^api.PluginContext,
+	element_id: api.ElementID,
+	x: f32,
+	y: f32,
+) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil || internal.ui_api == nil do return
+
+	ui.set_scroll_position(internal.ui_api, element_id, x, y)
+}
+
+// Get the rendered bounding box of an element
+api_get_element_bounds :: proc(
+	ctx: ^api.PluginContext,
+	element_id: api.ElementID,
+) -> (
+	x: f32,
+	y: f32,
+	width: f32,
+	height: f32,
+	found: bool,
+) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil || internal.ui_api == nil do return 0, 0, 0, 0, false
+
+	return ui.get_element_bounds_ui(internal.ui_api, element_id)
 }
 
 // =============================================================================

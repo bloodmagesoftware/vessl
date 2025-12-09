@@ -371,9 +371,40 @@ process_pty_output :: proc(state: ^TerminalState) {
 		// Flush damage to update dirty flags
 		vterm.flush_damage(state.vt_screen)
 
+		// Auto-scroll to bottom when new content arrives
+		auto_scroll_to_bottom(state)
+
 		// Request redraw since terminal content changed
 		// This is needed because PTY output isn't triggered by SDL events
 		api.request_redraw(state.ctx)
+	}
+}
+
+// Auto-scroll the terminal to show the bottom content
+// This ensures new output is always visible
+auto_scroll_to_bottom :: proc(state: ^TerminalState) {
+	if state == nil || state.ctx == nil do return
+	if state.terminal_root_id == api.ElementID("") do return
+
+	// Calculate total content height
+	// Content = padding_top + (rows * cell_height) + padding_bottom
+	padding: f32 = 8 // Matches padding set in create_terminal_ui
+	content_height := padding + f32(state.rows) * state.cell_height + padding
+
+	// Get the container's visible height from the stored dimensions
+	// We need to estimate the container height based on last known dimensions
+	container_height := state.last_height
+	if container_height <= 0 {
+		// If we don't have container height yet, skip auto-scroll
+		return
+	}
+
+	// Only scroll if content exceeds container
+	if content_height > container_height {
+		// Scroll position is negative to scroll down
+		// To show the bottom, scroll_y = -(content_height - container_height)
+		scroll_y := -(content_height - container_height)
+		api.set_scroll_position(state.ctx, state.terminal_root_id, 0, scroll_y)
 	}
 }
 
@@ -516,19 +547,34 @@ sdl_key_to_vterm_key :: proc(sdl_key: i32) -> vterm.VTermKey {
 	return .NONE
 }
 
-// Resize terminal
+// Resize terminal based on container dimensions
 resize_terminal :: proc(state: ^TerminalState, width, height: f32) {
 	if state == nil do return
 
+	// Account for padding (8px on each side)
+	padding: f32 = 16
+	available_width := width - padding
+	available_height := height - padding
+
 	// Calculate new dimensions based on container size
-	new_cols := max(int(width / state.cell_width), 20)
-	new_rows := max(int(height / state.cell_height), 5)
+	new_cols := max(int(available_width / state.cell_width), 20)
+	new_rows := max(int(available_height / state.cell_height), 3)
 
 	if new_cols == state.cols && new_rows == state.rows {
 		return // No change needed
 	}
 
-	fmt.printf("[terminal] Resizing to %dx%d\n", new_cols, new_rows)
+	fmt.printf(
+		"[terminal] Resizing to %dx%d (container: %.0fx%.0f)\n",
+		new_cols,
+		new_rows,
+		width,
+		height,
+	)
+
+	old_rows := state.rows
+	state.rows = new_rows
+	state.cols = new_cols
 
 	// Update vterm size
 	if state.vt != nil {
@@ -540,9 +586,6 @@ resize_terminal :: proc(state: ^TerminalState, width, height: f32) {
 		resize_pty(state.pty, new_rows, new_cols)
 	}
 
-	state.rows = new_rows
-	state.cols = new_cols
-
 	// Resize dirty tracking
 	old_dirty := state.dirty_rows
 	state.dirty_rows = make([dynamic]bool, new_rows, state.allocator)
@@ -553,13 +596,57 @@ resize_terminal :: proc(state: ^TerminalState, width, height: f32) {
 		delete(old_dirty)
 	}
 
-	// TODO: Recreate row nodes if needed (would require container access)
+	// Recreate row nodes if row count changed
+	if new_rows != old_rows && state.terminal_root_id != api.ElementID("") {
+		recreate_row_nodes(state, new_rows)
+	}
+
+	// Update stored dimensions
+	state.last_width = width
+	state.last_height = height
+}
+
+// Recreate row nodes when terminal is resized
+recreate_row_nodes :: proc(state: ^TerminalState, new_rows: int) {
+	if state == nil || state.ctx == nil do return
+
+	// Find terminal root node
+	terminal_root := api.find_node_by_id(state.ctx, state.terminal_root_id)
+	if terminal_root == nil do return
+
+	cell_height_int := int(state.cell_height)
+
+	// Remove old row nodes (keep cursor node which is first child)
+	// Clear children except cursor (index 0)
+	api.clear_children_except(terminal_root, 1)
+
+	// Recreate row nodes array
+	if state.row_nodes != nil {
+		delete(state.row_nodes)
+	}
+	state.row_nodes = make([dynamic]^api.UINode, new_rows, state.allocator)
+
+	// Create new row nodes
+	for row in 0 ..< new_rows {
+		row_id := api.ElementID(fmt.tprintf("terminal_row_%s_%d", state.container_id, row))
+		row_node := api.create_node(row_id, .Text, state.allocator)
+		row_node.style.width = api.SIZE_FULL
+		row_node.style.height = api.sizing_px(cell_height_int)
+		row_node.style.color = {0.9, 0.9, 0.9, 1.0} // Light text
+		row_node.text_content = "" // Empty initially
+
+		api.add_child(terminal_root, row_node)
+		state.row_nodes[row] = row_node
+	}
 }
 
 // Update the plugin
 terminal_update :: proc(ctx: ^api.PluginContext, dt: f32) {
 	state := cast(^TerminalState)ctx.user_data
 	if state == nil do return
+
+	// Check if container size changed and resize terminal if needed
+	check_container_resize(state)
 
 	// Process PTY output
 	process_pty_output(state)
@@ -572,6 +659,24 @@ terminal_update :: proc(ctx: ^api.PluginContext, dt: f32) {
 
 	// Update cursor blink logic
 	update_cursor_blink(state, dt)
+}
+
+// Check if terminal container has been resized and resize terminal accordingly
+check_container_resize :: proc(state: ^TerminalState) {
+	if state == nil || state.ctx == nil do return
+	if state.terminal_root_id == api.ElementID("") do return
+
+	// Query the actual rendered bounds of the terminal container
+	_, _, width, height, found := api.get_element_bounds(state.ctx, state.terminal_root_id)
+	if !found do return
+
+	// Check if size changed significantly (avoid floating point noise)
+	width_changed := abs(width - state.last_width) > 1.0
+	height_changed := abs(height - state.last_height) > 1.0
+
+	if width_changed || height_changed {
+		resize_terminal(state, width, height)
+	}
 }
 
 // Update cursor visual position accounting for scroll offset
@@ -746,6 +851,7 @@ terminal_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 			}
 		}
 		return false
+
 	}
 
 	return false

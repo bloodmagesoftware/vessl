@@ -1126,6 +1126,61 @@ get_element_scroll_position :: proc(
 	return 0, 0
 }
 
+// Set scroll position for an element
+// Directly modifies Clay's internal scroll position for auto-scrolling
+// Use negative values to scroll (e.g., negative y = scrolled down)
+set_element_scroll_position :: proc(
+	ctx: ^RendererContext,
+	element_id: api.ElementID,
+	x: f32,
+	y: f32,
+) {
+	if ctx == nil || ctx.clay_ctx == nil do return
+
+	clay.SetCurrentContext(ctx.clay_ctx)
+
+	// Get Clay element ID
+	node_id_str := string(element_id)
+	clay_id := clay.ID(node_id_str)
+
+	// Get scroll container data - this gives us a mutable pointer to the scroll position
+	scroll_data := clay.GetScrollContainerData(clay_id)
+	if scroll_data.found && scroll_data.scrollPosition != nil {
+		// Directly modify Clay's internal scroll position
+		scroll_data.scrollPosition^ = {x, y}
+	}
+}
+
+// Get the rendered bounding box of an element
+// Returns the bounds from the last rendered frame
+get_element_bounds :: proc(
+	ctx: ^RendererContext,
+	element_id: api.ElementID,
+) -> (
+	x: f32,
+	y: f32,
+	width: f32,
+	height: f32,
+	found: bool,
+) {
+	if ctx == nil || ctx.clay_ctx == nil do return 0, 0, 0, 0, false
+
+	clay.SetCurrentContext(ctx.clay_ctx)
+
+	// Get Clay element ID
+	node_id_str := string(element_id)
+	clay_id := clay.ID(node_id_str)
+
+	// Get element data from Clay
+	element_data := clay.GetElementData(clay_id)
+	if element_data.found {
+		box := element_data.boundingBox
+		return box.x, box.y, box.width, box.height, true
+	}
+
+	return 0, 0, 0, 0, false
+}
+
 // Cleanup renderer
 destroy_renderer :: proc(ctx: ^RendererContext) {
 	if ctx == nil do return

@@ -380,6 +380,19 @@ VesslAPI :: struct {
 
 	// Scroll Position
 	get_scroll_position:      proc(ctx: ^PluginContext, element_id: ElementID) -> (x: f32, y: f32),
+	set_scroll_position:      proc(ctx: ^PluginContext, element_id: ElementID, x: f32, y: f32),
+
+	// Element Bounds
+	get_element_bounds:       proc(
+		ctx: ^PluginContext,
+		element_id: ElementID,
+	) -> (
+		x: f32,
+		y: f32,
+		width: f32,
+		height: f32,
+		found: bool,
+	),
 
 	// Internal pointers (opaque to plugins, used by API implementation)
 	_internal:                rawptr,

@@ -189,6 +189,31 @@ get_scroll_position :: proc(ctx: ^PluginContext, element_id: ElementID) -> (x: f
 	return ctx.api.get_scroll_position(ctx, element_id)
 }
 
+// Set the scroll position of a scrollable container
+// Use negative values to scroll (e.g., negative y = scrolled down)
+// This directly modifies Clay's internal scroll position for auto-scrolling
+set_scroll_position :: proc(ctx: ^PluginContext, element_id: ElementID, x: f32, y: f32) {
+	if ctx == nil || ctx.api == nil || ctx.api.set_scroll_position == nil do return
+	ctx.api.set_scroll_position(ctx, element_id, x, y)
+}
+
+// Get the rendered bounding box of an element
+// Returns (0, 0, 0, 0, false) if the element is not found
+// Note: This returns the bounds from the last rendered frame
+get_element_bounds :: proc(
+	ctx: ^PluginContext,
+	element_id: ElementID,
+) -> (
+	x: f32,
+	y: f32,
+	width: f32,
+	height: f32,
+	found: bool,
+) {
+	if ctx == nil || ctx.api == nil || ctx.api.get_element_bounds == nil do return 0, 0, 0, 0, false
+	return ctx.api.get_element_bounds(ctx, element_id)
+}
+
 // =============================================================================
 // High-Level Component API Wrappers
 // =============================================================================
