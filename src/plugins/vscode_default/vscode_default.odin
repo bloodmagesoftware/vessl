@@ -9,19 +9,27 @@ SIDEBAR_MIN_WIDTH :: 150 // Minimum sidebar width in pixels
 SIDEBAR_MAX_WIDTH_PERCENT :: 0.75 // Maximum sidebar width as percentage of window width (75%)
 SIDEBAR_DEFAULT_WIDTH :: 400 // Default sidebar width in pixels
 RESIZE_HANDLE_WIDTH :: 6 // Width of the resize handle in pixels
+TERMINAL_DEFAULT_HEIGHT :: 250 // Default terminal panel height in pixels
+TERMINAL_RESIZE_HANDLE_HEIGHT :: 6 // Height of the terminal resize handle
 
 // Plugin state
 VSCodeDefaultState :: struct {
-	root_node:     ^api.UINode,
-	containers:    map[string]^api.UINode, // Map container ID to node
-	allocator:     mem.Allocator,
-	// Resize state
-	sidebar_node:  ^api.UINode, // Reference to sidebar for resizing
-	resize_handle: ^api.UINode, // The resize handle element
-	sidebar_width: f32, // Current sidebar width
-	is_resizing:   bool, // Whether we're currently resizing
+	root_node:              ^api.UINode,
+	containers:             map[string]^api.UINode, // Map container ID to node
+	allocator:              mem.Allocator,
+	// Sidebar resize state
+	sidebar_node:           ^api.UINode, // Reference to sidebar for resizing
+	resize_handle:          ^api.UINode, // The resize handle element
+	sidebar_width:          f32, // Current sidebar width
+	is_resizing:            bool, // Whether we're currently resizing sidebar
+	// Terminal resize state
+	terminal_container:     ^api.UINode, // Reference to terminal container for resizing
+	terminal_resize_handle: ^api.UINode, // The terminal resize handle
+	terminal_height:        f32, // Current terminal height
+	is_resizing_terminal:   bool, // Whether we're currently resizing terminal
 	// Window state (for dynamic max width calculation)
-	window_width:  i32, // Current window width in logical pixels
+	window_width:           i32, // Current window width in logical pixels
+	window_height:          i32, // Current window height in logical pixels
 }
 
 // Initialize the plugin
@@ -33,8 +41,9 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	state.containers = {}
 
 	// Get initial window size for dynamic max width calculation
-	window_width, _ := api.get_window_size(ctx)
+	window_width, window_height := api.get_window_size(ctx)
 	state.window_width = window_width
+	state.window_height = window_height
 
 	ctx.user_data = state
 
@@ -102,14 +111,62 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 	api.add_child(sidebar_container, resize_handle)
 	state.resize_handle = resize_handle
 
-	// Editor area container - grows width and height (will hold tab container)
+	// Editor + Terminal vertical stack - grows to fill right side
+	editor_terminal_stack := api.create_node(
+		api.ElementID("editor_terminal_stack"),
+		.Container,
+		ctx.allocator,
+	)
+	editor_terminal_stack.style.width = api.sizing_grow() // Grows to fill remaining width
+	editor_terminal_stack.style.height = api.sizing_grow() // Grows to fill height
+	editor_terminal_stack.style.color = {0.1, 0.1, 0.1, 1.0}
+	editor_terminal_stack.style.layout_dir = .TopDown // Vertical: editor on top, terminal below
+	api.add_child(horizontal_stack, editor_terminal_stack)
+
+	// Editor area container - grows to fill available space above terminal
 	editor_main := api.create_node(api.ElementID("editor_main"), .Container, ctx.allocator)
-	editor_main.style.width = api.sizing_grow() // Grows to fill remaining width
-	editor_main.style.height = api.sizing_grow() // Grows to fill height
+	editor_main.style.width = api.SIZE_FULL // Full width of stack
+	editor_main.style.height = api.sizing_grow() // Grows to fill remaining height
 	editor_main.style.color = {0.12, 0.12, 0.12, 1.0} // Slightly lighter dark
 	editor_main.style.layout_dir = .TopDown
-	api.add_child(horizontal_stack, editor_main)
+	api.add_child(editor_terminal_stack, editor_main)
 	state.containers["editor_main"] = editor_main
+
+	// Terminal resize handle - horizontal bar above terminal
+	terminal_resize_handle := api.create_node(
+		api.ElementID("terminal_resize_handle"),
+		.Container,
+		ctx.allocator,
+	)
+	terminal_resize_handle.style.width = api.SIZE_FULL
+	terminal_resize_handle.style.height = api.sizing_px(TERMINAL_RESIZE_HANDLE_HEIGHT)
+	terminal_resize_handle.style.color = {0.15, 0.15, 0.15, 1.0}
+	terminal_resize_handle.cursor = .Resize
+	api.add_child(editor_terminal_stack, terminal_resize_handle)
+	state.terminal_resize_handle = terminal_resize_handle
+
+	// Terminal container - fixed height at bottom
+	terminal_container := api.create_node(
+		api.ElementID("terminal_container"),
+		.Container,
+		ctx.allocator,
+	)
+	terminal_container.style.width = api.SIZE_FULL
+	terminal_container.style.height = api.sizing_px(TERMINAL_DEFAULT_HEIGHT)
+	terminal_container.style.color = {0.1, 0.1, 0.1, 1.0}
+	terminal_container.style.layout_dir = .TopDown
+	api.add_child(editor_terminal_stack, terminal_container)
+	state.terminal_container = terminal_container
+	state.terminal_height = TERMINAL_DEFAULT_HEIGHT
+
+	// Terminal content area - actual terminal display
+	terminal_bottom := api.create_node(api.ElementID("terminal_bottom"), .Container, ctx.allocator)
+	terminal_bottom.style.width = api.SIZE_FULL
+	terminal_bottom.style.height = api.sizing_grow()
+	terminal_bottom.style.color = {0.08, 0.08, 0.08, 1.0} // Darker background for terminal
+	terminal_bottom.style.layout_dir = .TopDown
+	api.add_child(terminal_container, terminal_bottom)
+	state.containers["terminal_bottom"] = terminal_bottom
 
 	// Bottom bar - full width, fixed height
 	status_bar := api.create_node(api.ElementID("status_bar"), .Container, ctx.allocator)
@@ -171,13 +228,18 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 
 	#partial switch event.type {
 	case .Mouse_Down:
-		// Check if mouse down is on the resize handle
+		// Check if mouse down is on a resize handle
 		#partial switch payload in event.payload {
 		case api.EventPayload_MouseDown:
-			if payload.element_id == api.ElementID("sidebar_resize_handle") &&
-			   payload.button == .Left {
-				state.is_resizing = true
-				return true // Consume the event
+			if payload.button == .Left {
+				if payload.element_id == api.ElementID("sidebar_resize_handle") {
+					state.is_resizing = true
+					return true // Consume the event
+				}
+				if payload.element_id == api.ElementID("terminal_resize_handle") {
+					state.is_resizing_terminal = true
+					return true // Consume the event
+				}
 			}
 		}
 		return false
@@ -186,9 +248,15 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 		// Stop resizing on mouse up
 		#partial switch payload in event.payload {
 		case api.EventPayload_MouseUp:
-			if state.is_resizing && payload.button == .Left {
-				state.is_resizing = false
-				return true // Consume the event
+			if payload.button == .Left {
+				if state.is_resizing {
+					state.is_resizing = false
+					return true // Consume the event
+				}
+				if state.is_resizing_terminal {
+					state.is_resizing_terminal = false
+					return true // Consume the event
+				}
 			}
 		}
 		return false
@@ -197,6 +265,7 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 		// Handle resize dragging
 		#partial switch payload in event.payload {
 		case api.EventPayload_MouseMove:
+			// Sidebar resize
 			if state.is_resizing {
 				// Update sidebar width based on mouse delta
 				new_width := state.sidebar_width + payload.delta_x
@@ -215,6 +284,31 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 				state.sidebar_width = new_width
 				if state.sidebar_node != nil {
 					state.sidebar_node.style.width = api.sizing_px(int(new_width))
+				}
+
+				return true // Consume the event
+			}
+
+			// Terminal resize (dragging up increases height, dragging down decreases)
+			if state.is_resizing_terminal {
+				// Dragging up (negative delta_y) increases terminal height
+				new_height := state.terminal_height - payload.delta_y
+
+				// Clamp to min/max values
+				TERMINAL_MIN_HEIGHT :: 100
+				TERMINAL_MAX_HEIGHT_PERCENT :: 0.75
+				max_height := f32(state.window_height) * TERMINAL_MAX_HEIGHT_PERCENT
+
+				if new_height < TERMINAL_MIN_HEIGHT {
+					new_height = TERMINAL_MIN_HEIGHT
+				} else if new_height > max_height {
+					new_height = max_height
+				}
+
+				// Update state and UI
+				state.terminal_height = new_height
+				if state.terminal_container != nil {
+					state.terminal_container.style.height = api.sizing_px(int(new_height))
 				}
 
 				return true // Consume the event
@@ -266,6 +360,16 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 			api.dispatch_event(ctx, editor_event)
 		}
 
+		// Terminal bottom for terminal plugin
+		layout_payload_terminal := api.EventPayload_Layout {
+			container_id  = "terminal_bottom",
+			target_plugin = "builtin:terminal",
+		}
+		terminal_event, _ := api.emit_event(ctx, .Layout_Container_Ready, layout_payload_terminal)
+		if terminal_event != nil {
+			api.dispatch_event(ctx, terminal_event)
+		}
+
 		// Status bar for status plugin (future)
 		layout_payload_status := api.EventPayload_Layout {
 			container_id  = "status_bar",
@@ -279,10 +383,11 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 		return false // Don't consume the event, let others see it
 
 	case .Window_Resize:
-		// Update window width and clamp sidebar if needed
+		// Update window dimensions and clamp panels if needed
 		#partial switch payload in event.payload {
 		case api.EventPayload_WindowResize:
 			state.window_width = payload.width
+			state.window_height = payload.height
 
 			// Calculate new max width (75% of window width)
 			max_width := f32(payload.width) * SIDEBAR_MAX_WIDTH_PERCENT
@@ -292,6 +397,18 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 				state.sidebar_width = max_width
 				if state.sidebar_node != nil {
 					state.sidebar_node.style.width = api.sizing_px(int(max_width))
+				}
+			}
+
+			// Calculate new max height for terminal (75% of window height)
+			TERMINAL_MAX_HEIGHT_PERCENT :: 0.75
+			max_height := f32(payload.height) * TERMINAL_MAX_HEIGHT_PERCENT
+
+			// If terminal is taller than new max, clamp it
+			if state.terminal_height > max_height {
+				state.terminal_height = max_height
+				if state.terminal_container != nil {
+					state.terminal_container.style.height = api.sizing_px(int(max_height))
 				}
 			}
 		}

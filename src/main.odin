@@ -9,6 +9,7 @@ import "core:sync"
 import buffer_manager "plugins/buffer_manager"
 import filetree "plugins/filetree"
 import image_viewer "plugins/image_viewer"
+import terminal "plugins/terminal"
 import text_editor "plugins/text_editor"
 import vscode_default "plugins/vscode_default"
 import "ui"
@@ -92,6 +93,9 @@ main :: proc() {
 		return
 	}
 	defer win.destroy_window(window_ctx)
+
+	// Enable text input for the window (required for TEXT_INPUT events)
+	_ = sdl.StartTextInput(window_ctx.window)
 
 	// Initialize renderer with actual renderer output size (accounts for DPI)
 	render_width, render_height := win.get_renderer_output_size(window_ctx)
@@ -233,6 +237,24 @@ main :: proc() {
 
 	if !core.init_plugin(plugin_registry, "builtin:text_editor", vessl_api) {
 		fmt.eprintln("Failed to initialize text_editor plugin")
+		return
+	}
+
+	// Register and initialize terminal plugin
+	terminal_plugin := new(core.Plugin)
+	terminal_plugin.id = "builtin:terminal"
+	terminal_plugin.vtable = terminal.get_vtable()
+	terminal_plugin.priority = 0 // Default priority
+	terminal_plugin.user_data = nil
+
+	terminal_handle := core.register_plugin(plugin_registry, terminal_plugin)
+	if terminal_handle == 0 {
+		fmt.eprintln("Failed to register terminal plugin")
+		return
+	}
+
+	if !core.init_plugin(plugin_registry, "builtin:terminal", vessl_api) {
+		fmt.eprintln("Failed to initialize terminal plugin")
 		return
 	}
 
@@ -449,6 +471,21 @@ main :: proc() {
 				sync.mutex_unlock(&render_required_mutex)
 
 			case .TEXT_INPUT:
+				// Emit Text_Input event
+				// SDL3 provides UTF-8 text as a cstring
+				fmt.printf("[main] TEXT_INPUT event: '%s'\n", event.text.text)
+				text_input_payload := api.EventPayload_TextInput {
+					text = string(event.text.text),
+				}
+				text_input_event, _ := core.emit_event_typed(
+					eventbus,
+					.Text_Input,
+					text_input_payload,
+				)
+				if text_input_event != nil {
+					core.dispatch_event_to_plugins(plugin_registry, text_input_event)
+				}
+
 				// Immediate feedback for text input
 				sync.mutex_lock(&render_required_mutex)
 				render_required = true
@@ -459,6 +496,9 @@ main :: proc() {
 				// Check for keyboard shortcuts
 				key := event.key.key
 				mod_state := event.key.mod
+				scancode := event.key.scancode
+				is_repeat := event.key.repeat
+				fmt.printf("[main] KEY_DOWN event: key=%d\n", key)
 
 				// Convert SDL modifiers to our platform-specific KeyModifier type
 				// SDL3 uses LCTRL/RCTRL for left/right control, LGUI/RGUI for Cmd/Win key, etc.
@@ -494,21 +534,37 @@ main :: proc() {
 					}
 				}
 
-				// Look up if there's a shortcut registered for this key combination
-				event_name, found := core.find_shortcut(shortcut_registry, i32(key), modifiers)
-				if found {
-					// Emit custom signal event with the shortcut's event name
-					shortcut_payload := core.EventPayload_Custom {
-						name = event_name,
-						data = nil,
-					}
-					shortcut_event, _ := core.emit_event_typed(
-						eventbus,
-						.Custom_Signal,
-						shortcut_payload,
-					)
-					if shortcut_event != nil {
-						core.dispatch_event_to_plugins(plugin_registry, shortcut_event)
+				// Emit Key_Down event for plugins that need raw key input (like terminal)
+				key_down_payload := api.EventPayload_KeyDown {
+					key       = i32(key),
+					scancode  = i32(scancode),
+					modifiers = modifiers,
+					repeat    = is_repeat,
+				}
+				key_down_event, _ := core.emit_event_typed(eventbus, .Key_Down, key_down_payload)
+				key_consumed := false
+				if key_down_event != nil {
+					key_consumed = core.dispatch_event_to_plugins(plugin_registry, key_down_event)
+				}
+
+				// Only check shortcuts if the key wasn't consumed by a plugin
+				if !key_consumed {
+					// Look up if there's a shortcut registered for this key combination
+					event_name, found := core.find_shortcut(shortcut_registry, i32(key), modifiers)
+					if found {
+						// Emit custom signal event with the shortcut's event name
+						shortcut_payload := core.EventPayload_Custom {
+							name = event_name,
+							data = nil,
+						}
+						shortcut_event, _ := core.emit_event_typed(
+							eventbus,
+							.Custom_Signal,
+							shortcut_payload,
+						)
+						if shortcut_event != nil {
+							core.dispatch_event_to_plugins(plugin_registry, shortcut_event)
+						}
 					}
 				}
 

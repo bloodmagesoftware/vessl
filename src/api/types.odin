@@ -31,6 +31,10 @@ EventType :: enum {
 	Mouse_Up, // Mouse button released (provides element under mouse)
 	Mouse_Move, // Mouse moved (provides movement delta)
 
+	// Keyboard Events
+	Key_Down, // Key pressed (provides key code and modifiers)
+	Text_Input, // Text input (provides UTF-8 text)
+
 	// Component Events
 	Component_Tab_Changed, // Emitted when a tab is selected in a TabContainer
 
@@ -105,6 +109,17 @@ EventPayload_WindowResize :: struct {
 	height: i32, // New window height in renderer/physical pixels (accounts for DPI)
 }
 
+EventPayload_KeyDown :: struct {
+	key:       i32, // SDL keycode
+	scancode:  i32, // SDL scancode
+	modifiers: KeyModifier, // Modifier keys held
+	repeat:    bool, // True if this is a key repeat event
+}
+
+EventPayload_TextInput :: struct {
+	text: string, // UTF-8 encoded text input
+}
+
 // Event Payload Union - All possible payloads
 EventPayload :: union {
 	EventPayload_Layout,
@@ -119,6 +134,8 @@ EventPayload :: union {
 	EventPayload_MouseUp,
 	EventPayload_MouseMove,
 	EventPayload_WindowResize,
+	EventPayload_KeyDown,
+	EventPayload_TextInput,
 }
 
 // Event struct - Represents an event in the system
