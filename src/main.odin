@@ -4,6 +4,7 @@ import api "api"
 import win "core"
 import core "core"
 import "core:fmt"
+import "core:os"
 import "core:sync"
 import buffer_manager "plugins/buffer_manager"
 import filetree "plugins/filetree"
@@ -55,6 +56,11 @@ set_cursor_for_type :: proc(window: ^sdl.Window, cursor_type: api.CursorType) {
 }
 
 main :: proc() {
+	// If a path argument is provided, change to that directory
+	if len(os.args) > 1 {
+		os.set_current_directory(os.args[1])
+	}
+
 	// Initialize EventBus
 	eventbus := core.init_eventbus()
 	if eventbus == nil {
