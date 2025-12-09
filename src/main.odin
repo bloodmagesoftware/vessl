@@ -130,6 +130,10 @@ main :: proc() {
 	}
 	defer ui.destroy_component_registry(component_registry)
 
+	// Render state - declared here so plugins can request redraws via API
+	render_required := true // Draw initial frame
+	render_required_mutex: sync.Mutex // Protect render_required for thread safety
+
 	// Initialize VesslAPI - the main API interface for plugins
 	vessl_api := init_vessl_api(
 		eventbus,
@@ -139,6 +143,8 @@ main :: proc() {
 		platform_api_ptr,
 		component_registry,
 		window_ctx,
+		&render_required,
+		&render_required_mutex,
 	)
 	if vessl_api == nil {
 		fmt.eprintln("Failed to initialize VesslAPI")
@@ -271,8 +277,6 @@ main :: proc() {
 	// Main event loop with Animation Decay architecture
 	// This achieves 60 FPS during interactions and 0% CPU when idle
 	running := true
-	render_required := true // Draw initial frame
-	render_required_mutex: sync.Mutex // Protect render_required for thread safety
 	animation_until := u64(0) // Timestamp in ms when animation should stop
 	last_frame_time := sdl.GetTicks()
 

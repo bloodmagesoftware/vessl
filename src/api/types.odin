@@ -343,6 +343,7 @@ VesslAPI :: struct {
 		container_id: string,
 		node: ^UINode,
 	) -> bool,
+	request_redraw:           proc(ctx: ^PluginContext), // Request a UI redraw (thread-safe)
 
 	// High-Level Components - Tab Container
 	create_tab_container:     proc(

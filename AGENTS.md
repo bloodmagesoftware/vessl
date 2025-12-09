@@ -139,6 +139,12 @@ case .Layout_Container_Ready:
 return false
 ```
 
+**Request redraw (for non-event UI updates):**
+```odin
+// Call when UI changes from background thread/timer/async
+api.request_redraw(ctx)
+```
+
 **Register shortcut:**
 ```odin
 api.register_shortcut(ctx, 'o', {.Ctrl}, "open_file")  // Win/Linux

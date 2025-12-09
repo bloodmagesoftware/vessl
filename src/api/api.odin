@@ -136,6 +136,14 @@ attach_to_container :: proc(ctx: ^PluginContext, container_id: string, node: ^UI
 	return ctx.api.attach_to_container(ctx, container_id, node)
 }
 
+// Request a UI redraw on the next frame
+// Call this when you've made UI changes that need to be rendered
+// This is thread-safe and can be called from any thread
+request_redraw :: proc(ctx: ^PluginContext) {
+	if ctx == nil || ctx.api == nil || ctx.api.request_redraw == nil do return
+	ctx.api.request_redraw(ctx)
+}
+
 // Register a keyboard shortcut
 register_shortcut :: proc(
 	ctx: ^PluginContext,

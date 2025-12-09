@@ -240,6 +240,7 @@ VesslAPI :: struct {
     set_root_node:       proc(ctx: ^PluginContext, root: ^UINode),
     find_node_by_id:     proc(ctx: ^PluginContext, id: ElementID) -> ^UINode,
     attach_to_container: proc(ctx: ^PluginContext, container_id: string, node: ^UINode) -> bool,
+    request_redraw:      proc(ctx: ^PluginContext),
 
     // Keyboard Shortcuts
     register_shortcut:   proc(ctx: ^PluginContext, key: i32, modifiers: KeyModifier, event_name: string) -> bool,
@@ -609,6 +610,47 @@ Hidden elements:
 
 This is useful for tab containers, collapsible sections, and conditional UI.
 
+### 12. Requesting UI Redraws
+
+Vessl uses an "Animation Decay" architecture that only renders frames when necessary. SDL events (mouse movement, key presses, etc.) automatically trigger redraws. However, if your plugin updates the UI from a background thread, timer, or async operation, you need to explicitly request a redraw.
+
+```odin
+// Request a redraw after updating UI from a non-event context
+api.request_redraw(ctx)
+```
+
+**When to use `request_redraw`:**
+- After receiving data from a background thread
+- After a timer callback updates UI state
+- After async I/O operations complete
+- After any UI change not triggered by an SDL event
+
+**When NOT needed:**
+- Inside `on_event` handlers (SDL events trigger redraws automatically)
+- During `init` (initial frame is drawn automatically)
+- When handling click callbacks (these occur during event processing)
+
+**Example: Background Task Updates**
+
+```odin
+MyPluginState :: struct {
+    ctx: ^api.PluginContext,
+    status_text: ^api.UINode,
+    // ... other fields
+}
+
+// Called from a background thread when data is ready
+update_status :: proc(state: ^MyPluginState, new_status: string) {
+    // Update the UI node
+    state.status_text.text_content = new_status
+    
+    // Request a redraw since this isn't from an SDL event
+    api.request_redraw(state.ctx)
+}
+```
+
+**Thread Safety:** `request_redraw` is thread-safe and can be called from any thread.
+
 ## High-Level Components
 
 Vessl provides high-level components for common UI patterns. These components:
@@ -954,6 +996,7 @@ dispatch_event :: proc(ctx: ^PluginContext, event: ^Event) -> bool
 set_root_node :: proc(ctx: ^PluginContext, root: ^UINode)
 find_node_by_id :: proc(ctx: ^PluginContext, id: ElementID) -> ^UINode
 attach_to_container :: proc(ctx: ^PluginContext, container_id: string, node: ^UINode) -> bool
+request_redraw :: proc(ctx: ^PluginContext)
 
 // API convenience wrappers - High-Level Components
 create_tab_container :: proc(ctx: ^PluginContext, parent_id: ElementID, tabs: []TabInfo) -> ComponentID

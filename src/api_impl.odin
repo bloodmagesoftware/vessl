@@ -3,19 +3,23 @@ package main
 import api "api"
 import "core"
 import "core:mem"
+import "core:sync"
 import "ui"
 
 // Internal context for VesslAPI implementation
 // This holds references to all internal systems needed by the API
 APIInternalContext :: struct {
-	eventbus:           ^core.EventBus,
-	plugin_registry:    ^core.PluginRegistry,
-	shortcut_registry:  ^core.ShortcutRegistry,
-	ui_api:             ^ui.UIPluginAPI,
-	platform_api:       ^ui.PlatformAPI,
-	component_registry: ^ui.ComponentRegistry,
-	window_ctx:         ^core.WindowContext,
-	allocator:          mem.Allocator,
+	eventbus:              ^core.EventBus,
+	plugin_registry:       ^core.PluginRegistry,
+	shortcut_registry:     ^core.ShortcutRegistry,
+	ui_api:                ^ui.UIPluginAPI,
+	platform_api:          ^ui.PlatformAPI,
+	component_registry:    ^ui.ComponentRegistry,
+	window_ctx:            ^core.WindowContext,
+	allocator:             mem.Allocator,
+	// Render state for request_redraw (thread-safe access)
+	render_required:       ^bool,
+	render_required_mutex: ^sync.Mutex,
 }
 
 // Global API instance (single instance for the application)
@@ -35,6 +39,8 @@ init_vessl_api :: proc(
 	platform_api: ^ui.PlatformAPI,
 	component_registry: ^ui.ComponentRegistry,
 	window_ctx: ^core.WindowContext,
+	render_required: ^bool,
+	render_required_mutex: ^sync.Mutex,
 	allocator := context.allocator,
 ) -> ^api.VesslAPI {
 	// Create internal context
@@ -46,6 +52,8 @@ init_vessl_api :: proc(
 	g_api_internal.platform_api = platform_api
 	g_api_internal.component_registry = component_registry
 	g_api_internal.window_ctx = window_ctx
+	g_api_internal.render_required = render_required
+	g_api_internal.render_required_mutex = render_required_mutex
 	g_api_internal.allocator = allocator
 
 	// Set up the VTable
@@ -58,6 +66,7 @@ init_vessl_api :: proc(
 		set_root_node            = api_set_root_node,
 		find_node_by_id          = api_find_node_by_id,
 		attach_to_container      = api_attach_to_container,
+		request_redraw           = api_request_redraw,
 
 		// High-Level Components - Tab Container
 		create_tab_container     = api_create_tab_container,
@@ -144,6 +153,18 @@ api_attach_to_container :: proc(
 	if internal == nil || internal.ui_api == nil do return false
 
 	return ui.attach_to_container(internal.ui_api, container_id, node)
+}
+
+// Request a UI redraw on the next frame
+// This is thread-safe and can be called from any thread
+api_request_redraw :: proc(ctx: ^api.PluginContext) {
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil do return
+	if internal.render_required == nil || internal.render_required_mutex == nil do return
+
+	sync.mutex_lock(internal.render_required_mutex)
+	internal.render_required^ = true
+	sync.mutex_unlock(internal.render_required_mutex)
 }
 
 // Register a keyboard shortcut

@@ -301,6 +301,10 @@ process_pty_output :: proc(state: ^TerminalState) {
 
 		// Flush damage to update dirty flags
 		vterm.flush_damage(state.vt_screen)
+
+		// Request redraw since terminal content changed
+		// This is needed because PTY output isn't triggered by SDL events
+		api.request_redraw(state.ctx)
 	}
 }
 
