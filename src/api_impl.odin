@@ -248,6 +248,7 @@ reset_render_at :: proc() {
 }
 
 // Request render from internal code (not through plugin context)
+// Uses RENDER_DELAY_MS batching for visual UI changes
 request_render_internal :: proc() {
 	if g_api_internal == nil do return
 
@@ -259,6 +260,24 @@ request_render_internal :: proc() {
 
 	if g_api_internal.render_at == 0 || target_time < g_api_internal.render_at {
 		g_api_internal.render_at = target_time
+	}
+}
+
+// Request immediate render for interaction processing (hit-testing)
+// Use this when Clay layout is needed to detect mouse interactions
+// No delay - renders as soon as the event loop checks
+request_render_immediate :: proc() {
+	if g_api_internal == nil do return
+
+	current_time := sdl.GetTicks()
+
+	sync.mutex_lock(&g_api_internal.render_at_mutex)
+	defer sync.mutex_unlock(&g_api_internal.render_at_mutex)
+
+	// Set to current time for immediate processing
+	// This takes priority over batched renders (earlier time wins)
+	if g_api_internal.render_at == 0 || current_time < g_api_internal.render_at {
+		g_api_internal.render_at = current_time
 	}
 }
 

@@ -386,8 +386,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_move_event)
 				}
 
-			// Mouse movement may trigger hover state changes via event handlers
-			// Those handlers will call request_render if UI changes are made
+				// Immediate render needed for Clay hit-testing (hover state detection)
+				request_render_immediate()
 
 			case .MOUSE_BUTTON_DOWN:
 				// Update mouse position and button state
@@ -423,8 +423,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_down_event)
 				}
 
-			// Mouse events may trigger UI changes via event handlers
-			// Those handlers will call request_render if UI changes are made
+				// Immediate render needed for Clay hit-testing (click detection)
+				request_render_immediate()
 
 			case .MOUSE_BUTTON_UP:
 				// Update mouse position and button state
@@ -455,8 +455,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_up_event)
 				}
 
-			// Mouse events may trigger UI changes via event handlers
-			// Those handlers will call request_render if UI changes are made
+				// Immediate render needed for Clay hit-testing (click release)
+				request_render_immediate()
 
 			case .TEXT_INPUT:
 				// Emit Text_Input event
