@@ -51,8 +51,8 @@ attach_to_container :: proc(uiapi: ^UIPluginAPI, container_id: string, node: ^ap
 		return false
 	}
 
-	// Add the node as a child
-	api.add_child(container, node)
+	// Add the node as a child (nil context for internal use)
+	api.add_child(nil, container, node)
 
 	return true
 }

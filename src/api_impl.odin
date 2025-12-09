@@ -3,7 +3,12 @@ package main
 import api "api"
 import "core"
 import "core:mem"
+import "core:sync"
 import "ui"
+import sdl "vendor:sdl3"
+
+// Render scheduling constants
+RENDER_DELAY_MS :: 10 // Batch UI changes within 10ms
 
 // Internal context for VesslAPI implementation
 // This holds references to all internal systems needed by the API
@@ -16,6 +21,9 @@ APIInternalContext :: struct {
 	component_registry: ^ui.ComponentRegistry,
 	window_ctx:         ^core.WindowContext,
 	allocator:          mem.Allocator,
+	// Render scheduling
+	render_at:          u64, // Timestamp when to render (0 = no render scheduled)
+	render_at_mutex:    sync.Mutex, // Thread safety for render_at
 }
 
 // Global API instance (single instance for the application)
@@ -75,6 +83,9 @@ init_vessl_api :: proc(
 
 		// Window Information
 		get_window_size          = api_get_window_size,
+
+		// Render Scheduling
+		request_render           = api_request_render,
 
 		// Internal pointer
 		_internal                = g_api_internal,
@@ -188,6 +199,67 @@ api_get_window_size :: proc(ctx: ^api.PluginContext) -> (width: i32, height: i32
 	if internal == nil || internal.window_ctx == nil do return 0, 0
 
 	return core.get_renderer_output_size(internal.window_ctx)
+}
+
+// =============================================================================
+// Render Scheduling API Implementation
+// =============================================================================
+
+// Request a render to occur within RENDER_DELAY_MS
+// Multiple calls within the delay window are batched together
+api_request_render :: proc(ctx: ^api.PluginContext) {
+	if ctx == nil || ctx.api == nil do return
+	internal := cast(^APIInternalContext)ctx.api._internal
+	if internal == nil do return
+
+	current_time := sdl.GetTicks()
+	target_time := current_time + RENDER_DELAY_MS
+
+	sync.mutex_lock(&internal.render_at_mutex)
+	defer sync.mutex_unlock(&internal.render_at_mutex)
+
+	// Only update if we don't have a render scheduled, or if the current
+	// scheduled time is later than our target (shouldn't happen with batching)
+	if internal.render_at == 0 || target_time < internal.render_at {
+		internal.render_at = target_time
+	}
+}
+
+// Helper functions for main.odin to access render_at
+
+// Get the current render_at timestamp (thread-safe)
+get_render_at :: proc() -> u64 {
+	if g_api_internal == nil do return 0
+
+	sync.mutex_lock(&g_api_internal.render_at_mutex)
+	defer sync.mutex_unlock(&g_api_internal.render_at_mutex)
+
+	return g_api_internal.render_at
+}
+
+// Reset render_at to 0 after rendering (thread-safe)
+reset_render_at :: proc() {
+	if g_api_internal == nil do return
+
+	sync.mutex_lock(&g_api_internal.render_at_mutex)
+	defer sync.mutex_unlock(&g_api_internal.render_at_mutex)
+
+	g_api_internal.render_at = 0
+}
+
+// Request render from internal code (not through plugin context)
+request_render_internal :: proc() {
+	if g_api_internal == nil do return
+
+	current_time := sdl.GetTicks()
+	target_time := current_time + RENDER_DELAY_MS
+
+	sync.mutex_lock(&g_api_internal.render_at_mutex)
+	defer sync.mutex_unlock(&g_api_internal.render_at_mutex)
+
+	if g_api_internal.render_at == 0 || target_time < g_api_internal.render_at {
+		g_api_internal.render_at = target_time
+	}
 }
 
 // =============================================================================

@@ -194,7 +194,7 @@ create_tab_container :: proc(
 	tab_bar.style.layout_dir = .LeftRight
 	tab_bar.style.padding = {4, 0, 4, 0} // Small horizontal padding
 	tab_bar.style.gap = 2 // Small gap between tabs
-	api.add_child(root_node, tab_bar)
+	api.add_child(nil, root_node, tab_bar) // nil context for internal use
 
 	// Create content area (holds all tab content containers, stacked)
 	content_area := api.create_node(api.ElementID(content_area_id), .Container, allocator)
@@ -202,7 +202,7 @@ create_tab_container :: proc(
 	content_area.style.height = api.sizing_grow()
 	content_area.style.color = {0.0, 0.0, 0.0, 0.0} // Transparent
 	content_area.style.layout_dir = .TopDown
-	api.add_child(root_node, content_area)
+	api.add_child(nil, root_node, content_area) // nil context for internal use
 
 	// Create tab container state
 	state := new(TabContainerState, allocator)
@@ -285,7 +285,7 @@ add_tab_to_state :: proc(
 	tab_title.style.color = {0.8, 0.8, 0.8, 1.0} // Light gray text
 	tab_title.style.width = api.sizing_fit()
 	tab_title.style.height = api.sizing_fit()
-	api.add_child(tab_btn, tab_title)
+	api.add_child(nil, tab_btn, tab_title) // nil context for internal use
 
 	// Create click callback context
 	click_ctx := new(TabClickContext, allocator)
@@ -297,7 +297,7 @@ add_tab_to_state :: proc(
 	tab_btn.callback_ctx = click_ctx
 
 	// Add tab button to tab bar
-	api.add_child(state.tab_bar, tab_btn)
+	api.add_child(nil, state.tab_bar, tab_btn) // nil context for internal use
 
 	// Create content container for this tab
 	content_id := strings.clone(tab_info.content_container_id, allocator)
@@ -309,7 +309,7 @@ add_tab_to_state :: proc(
 	content_container.style.hidden = true // Hidden by default
 
 	// Add content container to content area
-	api.add_child(state.content_area, content_container)
+	api.add_child(nil, state.content_area, content_container) // nil context for internal use
 
 	// Store tab state
 	tab_state := TabState {
@@ -438,11 +438,11 @@ tab_container_remove_tab :: proc(
 	// Get the tab to remove
 	tab := state.tabs[index]
 
-	// Remove tab button from tab bar
-	api.remove_child(state.tab_bar, tab.tab_button_node)
+	// Remove tab button from tab bar (nil context for internal use)
+	api.remove_child(nil, state.tab_bar, tab.tab_button_node)
 
-	// Remove content container from content area
-	api.remove_child(state.content_area, tab.content_container)
+	// Remove content container from content area (nil context for internal use)
+	api.remove_child(nil, state.content_area, tab.content_container)
 
 	// Free strings
 	delete(tab.title, state.allocator)

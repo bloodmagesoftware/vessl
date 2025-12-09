@@ -370,6 +370,9 @@ VesslAPI :: struct {
 	// Window Information
 	get_window_size:          proc(ctx: ^PluginContext) -> (width: i32, height: i32),
 
+	// Render Scheduling
+	request_render:           proc(ctx: ^PluginContext), // Schedule a render within 10ms
+
 	// Internal pointers (opaque to plugins, used by API implementation)
 	_internal:                rawptr,
 }

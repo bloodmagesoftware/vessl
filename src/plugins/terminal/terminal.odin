@@ -196,12 +196,12 @@ create_terminal_ui :: proc(state: ^TerminalState, container_id: string) -> bool 
 	// Create the main terminal container
 	terminal_root_id := api.ElementID(fmt.tprintf("terminal_root_%s", container_id))
 	terminal_root := api.create_node(terminal_root_id, .Container, state.allocator)
-	terminal_root.style.width = api.SIZE_FULL
-	terminal_root.style.height = api.sizing_grow()
-	terminal_root.style.color = {0.08, 0.08, 0.08, 1.0} // Dark terminal background
-	terminal_root.style.layout_dir = .TopDown
-	terminal_root.style.padding = {8, 8, 8, 8}
-	terminal_root.style.clip_vertical = true
+	api.node_set_width(state.ctx, terminal_root, api.SIZE_FULL)
+	api.node_set_height(state.ctx, terminal_root, api.sizing_grow())
+	api.node_set_color(state.ctx, terminal_root, {0.08, 0.08, 0.08, 1.0}) // Dark terminal background
+	api.node_set_layout_dir(state.ctx, terminal_root, .TopDown)
+	api.node_set_padding(state.ctx, terminal_root, {8, 8, 8, 8})
+	api.node_set_clip(state.ctx, terminal_root, true, false)
 
 	// Create row nodes (text nodes for each line)
 	if state.row_nodes != nil {
@@ -212,25 +212,25 @@ create_terminal_ui :: proc(state: ^TerminalState, container_id: string) -> bool 
 	for row in 0 ..< state.rows {
 		row_id := api.ElementID(fmt.tprintf("terminal_row_%s_%d", container_id, row))
 		row_node := api.create_node(row_id, .Text, state.allocator)
-		row_node.style.width = api.SIZE_FULL
-		row_node.style.height = api.sizing_px(CELL_HEIGHT)
-		row_node.style.color = {0.9, 0.9, 0.9, 1.0} // Light text
-		row_node.text_content = "" // Empty initially
+		api.node_set_width(state.ctx, row_node, api.SIZE_FULL)
+		api.node_set_height(state.ctx, row_node, api.sizing_px(CELL_HEIGHT))
+		api.node_set_color(state.ctx, row_node, {0.9, 0.9, 0.9, 1.0}) // Light text
+		api.node_set_text(state.ctx, row_node, "") // Empty initially
 
-		api.add_child(terminal_root, row_node)
+		api.add_child(state.ctx, terminal_root, row_node)
 		state.row_nodes[row] = row_node
 	}
 
 	// Make terminal clickable to gain focus
-	terminal_root.on_click = proc(ctx: rawptr) {
+	click_callback := proc(ctx: rawptr) {
 		state := cast(^TerminalState)ctx
 		if state != nil {
 			state.has_focus = true
 			fmt.println("[terminal] Gained focus")
 		}
 	}
-	terminal_root.callback_ctx = state
-	terminal_root.cursor = .Text
+	api.node_set_on_click(state.ctx, terminal_root, click_callback, state)
+	api.node_set_cursor(state.ctx, terminal_root, .Text)
 
 	// Attach to container
 	if !api.attach_to_container(state.ctx, container_id, terminal_root) {
@@ -271,8 +271,8 @@ update_row_content :: proc(state: ^TerminalState, row: int) {
 	row_text := strings.to_string(builder)
 	trimmed := strings.trim_right_space(row_text)
 
-	// Just set new content
-	node.text_content = strings.clone(trimmed, state.allocator)
+	// Set new content via setter (triggers render)
+	api.node_set_text(state.ctx, node, strings.clone(trimmed, state.allocator))
 }
 
 // Update all dirty rows

@@ -52,26 +52,29 @@ create_node :: proc(id: ElementID, type: ElementType, allocator := context.alloc
 }
 
 // Add a child node to a parent
-add_child :: proc(parent: ^UINode, child: ^UINode) {
+// Note: ctx can be nil during initial UI construction (before first render)
+add_child :: proc(ctx: ^PluginContext, parent: ^UINode, child: ^UINode) {
 	if parent == nil || child == nil do return
 	append(&parent.children, child)
 	child.parent = parent
+	request_render(ctx)
 }
 
 // Remove a child node from a parent
-remove_child :: proc(parent: ^UINode, child: ^UINode) {
+remove_child :: proc(ctx: ^PluginContext, parent: ^UINode, child: ^UINode) {
 	if parent == nil || child == nil do return
 	for child_node, i in parent.children {
 		if child_node == child {
 			ordered_remove(&parent.children, i)
 			child.parent = nil
+			request_render(ctx)
 			return
 		}
 	}
 }
 
 // Clear all children except the first N (useful for keeping text nodes)
-clear_children_except :: proc(node: ^UINode, keep_count: int = 0) {
+clear_children_except :: proc(ctx: ^PluginContext, node: ^UINode, keep_count: int = 0) {
 	if node == nil do return
 
 	// Remove children from the end, keeping the first keep_count
@@ -81,6 +84,7 @@ clear_children_except :: proc(node: ^UINode, keep_count: int = 0) {
 		child.parent = nil
 		ordered_remove(&node.children, last_idx)
 	}
+	request_render(ctx)
 }
 
 // Recursive helper to find a node by ID in a tree
@@ -164,6 +168,121 @@ show_folder_dialog :: proc(ctx: ^PluginContext, default_location: string = "") {
 get_window_size :: proc(ctx: ^PluginContext) -> (width: i32, height: i32) {
 	if ctx == nil || ctx.api == nil || ctx.api.get_window_size == nil do return 0, 0
 	return ctx.api.get_window_size(ctx)
+}
+
+// Request a render to occur within 10ms (for batching UI changes)
+request_render :: proc(ctx: ^PluginContext) {
+	if ctx == nil || ctx.api == nil || ctx.api.request_render == nil do return
+	ctx.api.request_render(ctx)
+}
+
+// =============================================================================
+// UINode Setter Functions
+// All setters automatically call request_render to schedule a UI update
+// =============================================================================
+
+// Style setters
+
+// Set the width of a node
+node_set_width :: proc(ctx: ^PluginContext, node: ^UINode, width: Sizing) {
+	if node == nil do return
+	node.style.width = width
+	request_render(ctx)
+}
+
+// Set the height of a node
+node_set_height :: proc(ctx: ^PluginContext, node: ^UINode, height: Sizing) {
+	if node == nil do return
+	node.style.height = height
+	request_render(ctx)
+}
+
+// Set the background color of a node (RGBA, 0.0-1.0)
+node_set_color :: proc(ctx: ^PluginContext, node: ^UINode, color: [4]f32) {
+	if node == nil do return
+	node.style.color = color
+	request_render(ctx)
+}
+
+// Set the padding of a node (left, right, top, bottom)
+node_set_padding :: proc(ctx: ^PluginContext, node: ^UINode, padding: [4]u16) {
+	if node == nil do return
+	node.style.padding = padding
+	request_render(ctx)
+}
+
+// Set the gap between children
+node_set_gap :: proc(ctx: ^PluginContext, node: ^UINode, gap: u16) {
+	if node == nil do return
+	node.style.gap = gap
+	request_render(ctx)
+}
+
+// Set the layout direction (TopDown or LeftRight)
+node_set_layout_dir :: proc(ctx: ^PluginContext, node: ^UINode, dir: LayoutDirection) {
+	if node == nil do return
+	node.style.layout_dir = dir
+	request_render(ctx)
+}
+
+// Set clipping behavior for vertical and horizontal overflow
+node_set_clip :: proc(ctx: ^PluginContext, node: ^UINode, vertical: bool, horizontal: bool) {
+	if node == nil do return
+	node.style.clip_vertical = vertical
+	node.style.clip_horizontal = horizontal
+	request_render(ctx)
+}
+
+// Set whether the node is hidden
+node_set_hidden :: proc(ctx: ^PluginContext, node: ^UINode, hidden: bool) {
+	if node == nil do return
+	node.style.hidden = hidden
+	request_render(ctx)
+}
+
+// Set the entire style at once (for bulk updates)
+node_set_style :: proc(ctx: ^PluginContext, node: ^UINode, style: Style) {
+	if node == nil do return
+	node.style = style
+	request_render(ctx)
+}
+
+// Content setters
+
+// Set the text content of a text node
+node_set_text :: proc(ctx: ^PluginContext, node: ^UINode, text: string) {
+	if node == nil do return
+	node.text_content = text
+	request_render(ctx)
+}
+
+// Set the image path of an image node
+node_set_image_path :: proc(ctx: ^PluginContext, node: ^UINode, path: string) {
+	if node == nil do return
+	node.image_path = path
+	request_render(ctx)
+}
+
+// Behavior setters
+
+// Set the click handler and callback context
+node_set_on_click :: proc(
+	ctx: ^PluginContext,
+	node: ^UINode,
+	callback: proc(ctx: rawptr),
+	callback_ctx: rawptr,
+) {
+	if node == nil do return
+	node.on_click = callback
+	node.callback_ctx = callback_ctx
+	// No render needed - behavior change only
+}
+
+// Set the cursor type when hovering
+node_set_cursor :: proc(ctx: ^PluginContext, node: ^UINode, cursor: CursorType) {
+	if node == nil do return
+	node.cursor = cursor
+	// No render needed - cursor is handled separately
 }
 
 // =============================================================================

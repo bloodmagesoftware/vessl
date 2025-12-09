@@ -101,24 +101,23 @@ create_editor_ui :: proc(state: ^TextEditorState, path: string, container_id: st
 	// Create a scrollable container for the text
 	container_node_id := api.ElementID(fmt.tprintf("editor_container_%s", container_id))
 	container_node := api.create_node(container_node_id, .Container, state.allocator)
-	container_node.style.width = api.SIZE_FULL
-	container_node.style.height = api.sizing_grow()
-	container_node.style.color = {0.12, 0.12, 0.12, 1.0} // Dark editor background
-	container_node.style.layout_dir = .TopDown
-	container_node.style.padding = {16, 16, 16, 16}
-	container_node.style.clip_vertical = true // Enable vertical scrolling
-	container_node.style.clip_horizontal = true // Enable horizontal scrolling
+	api.node_set_width(state.ctx, container_node, api.SIZE_FULL)
+	api.node_set_height(state.ctx, container_node, api.sizing_grow())
+	api.node_set_color(state.ctx, container_node, {0.12, 0.12, 0.12, 1.0}) // Dark editor background
+	api.node_set_layout_dir(state.ctx, container_node, .TopDown)
+	api.node_set_padding(state.ctx, container_node, {16, 16, 16, 16})
+	api.node_set_clip(state.ctx, container_node, true, true) // Enable vertical and horizontal scrolling
 
 	// Create the text content node
 	// For now, this is a simple text display - a full editor would need much more
 	text_node_id := api.ElementID(fmt.tprintf("editor_text_%s", container_id))
 	text_node := api.create_node(text_node_id, .Text, state.allocator)
-	text_node.style.width = api.sizing_fit()
-	text_node.style.height = api.sizing_fit()
-	text_node.style.color = {0.9, 0.9, 0.9, 1.0} // Light text color
-	text_node.text_content = content
+	api.node_set_width(state.ctx, text_node, api.sizing_fit())
+	api.node_set_height(state.ctx, text_node, api.sizing_fit())
+	api.node_set_color(state.ctx, text_node, {0.9, 0.9, 0.9, 1.0}) // Light text color
+	api.node_set_text(state.ctx, text_node, content)
 
-	api.add_child(container_node, text_node)
+	api.add_child(state.ctx, container_node, text_node)
 
 	// Attach to the container
 	if !api.attach_to_container(state.ctx, container_id, container_node) {

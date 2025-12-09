@@ -49,19 +49,19 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 
 	// Create root container - vertical stack covering full window
 	root := api.create_node(api.ElementID("vscode_root"), .Container, ctx.allocator)
-	root.style.width = api.SIZE_FULL // 100% - full window width
-	root.style.height = api.SIZE_FULL // 100% - full window height
-	root.style.color = {0.1, 0.1, 0.1, 1.0} // Dark background
-	root.style.layout_dir = .TopDown // Vertical stack
+	api.node_set_width(ctx, root, api.SIZE_FULL) // 100% - full window width
+	api.node_set_height(ctx, root, api.SIZE_FULL) // 100% - full window height
+	api.node_set_color(ctx, root, {0.1, 0.1, 0.1, 1.0}) // Dark background
+	api.node_set_layout_dir(ctx, root, .TopDown) // Vertical stack
 	state.root_node = root
 
 	// Top bar - full width, fixed height
 	top_bar := api.create_node(api.ElementID("top_bar"), .Container, ctx.allocator)
-	top_bar.style.width = api.SIZE_FULL // Full window width
-	top_bar.style.height = api.sizing_px(30) // Fixed 30px height
-	top_bar.style.color = {0.15, 0.15, 0.15, 1.0} // Dark gray
-	top_bar.style.layout_dir = .LeftRight
-	api.add_child(root, top_bar)
+	api.node_set_width(ctx, top_bar, api.SIZE_FULL) // Full window width
+	api.node_set_height(ctx, top_bar, api.sizing_px(30)) // Fixed 30px height
+	api.node_set_color(ctx, top_bar, {0.15, 0.15, 0.15, 1.0}) // Dark gray
+	api.node_set_layout_dir(ctx, top_bar, .LeftRight)
+	api.add_child(ctx, root, top_bar)
 
 	// Horizontal stack - full width, grows height
 	horizontal_stack := api.create_node(
@@ -69,11 +69,11 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	horizontal_stack.style.width = api.SIZE_FULL // Full window width
-	horizontal_stack.style.height = api.sizing_grow() // Grows to fill remaining space
-	horizontal_stack.style.color = {0.1, 0.1, 0.1, 1.0} // Dark background
-	horizontal_stack.style.layout_dir = .LeftRight // Horizontal layout
-	api.add_child(root, horizontal_stack)
+	api.node_set_width(ctx, horizontal_stack, api.SIZE_FULL) // Full window width
+	api.node_set_height(ctx, horizontal_stack, api.sizing_grow()) // Grows to fill remaining space
+	api.node_set_color(ctx, horizontal_stack, {0.1, 0.1, 0.1, 1.0}) // Dark background
+	api.node_set_layout_dir(ctx, horizontal_stack, .LeftRight) // Horizontal layout
+	api.add_child(ctx, root, horizontal_stack)
 
 	// Sidebar container (holds sidebar content + resize handle)
 	sidebar_container := api.create_node(
@@ -81,21 +81,21 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	sidebar_container.style.width = api.sizing_px(SIDEBAR_DEFAULT_WIDTH)
-	sidebar_container.style.height = api.sizing_grow()
-	sidebar_container.style.color = {0.2, 0.2, 0.2, 1.0}
-	sidebar_container.style.layout_dir = .LeftRight // Horizontal: content + resize handle
-	api.add_child(horizontal_stack, sidebar_container)
+	api.node_set_width(ctx, sidebar_container, api.sizing_px(SIDEBAR_DEFAULT_WIDTH))
+	api.node_set_height(ctx, sidebar_container, api.sizing_grow())
+	api.node_set_color(ctx, sidebar_container, {0.2, 0.2, 0.2, 1.0})
+	api.node_set_layout_dir(ctx, sidebar_container, .LeftRight) // Horizontal: content + resize handle
+	api.add_child(ctx, horizontal_stack, sidebar_container)
 	state.sidebar_node = sidebar_container
 	state.sidebar_width = SIDEBAR_DEFAULT_WIDTH
 
 	// Sidebar content area - grows to fill, leaves room for resize handle
 	sidebar_left := api.create_node(api.ElementID("sidebar_left"), .Container, ctx.allocator)
-	sidebar_left.style.width = api.sizing_grow() // Grows to fill (minus resize handle)
-	sidebar_left.style.height = api.sizing_grow() // Grows to fill height
-	sidebar_left.style.color = {0.2, 0.2, 0.2, 1.0} // Dark gray
-	sidebar_left.style.layout_dir = .TopDown
-	api.add_child(sidebar_container, sidebar_left)
+	api.node_set_width(ctx, sidebar_left, api.sizing_grow()) // Grows to fill (minus resize handle)
+	api.node_set_height(ctx, sidebar_left, api.sizing_grow()) // Grows to fill height
+	api.node_set_color(ctx, sidebar_left, {0.2, 0.2, 0.2, 1.0}) // Dark gray
+	api.node_set_layout_dir(ctx, sidebar_left, .TopDown)
+	api.add_child(ctx, sidebar_container, sidebar_left)
 	state.containers["sidebar_left"] = sidebar_left
 
 	// Resize handle - thin vertical bar at right edge of sidebar
@@ -104,11 +104,11 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	resize_handle.style.width = api.sizing_px(RESIZE_HANDLE_WIDTH)
-	resize_handle.style.height = api.sizing_grow()
-	resize_handle.style.color = {0.15, 0.15, 0.15, 1.0} // Slightly darker than sidebar
-	resize_handle.cursor = .Resize // Show resize cursor on hover
-	api.add_child(sidebar_container, resize_handle)
+	api.node_set_width(ctx, resize_handle, api.sizing_px(RESIZE_HANDLE_WIDTH))
+	api.node_set_height(ctx, resize_handle, api.sizing_grow())
+	api.node_set_color(ctx, resize_handle, {0.15, 0.15, 0.15, 1.0}) // Slightly darker than sidebar
+	api.node_set_cursor(ctx, resize_handle, .Resize) // Show resize cursor on hover
+	api.add_child(ctx, sidebar_container, resize_handle)
 	state.resize_handle = resize_handle
 
 	// Editor + Terminal vertical stack - grows to fill right side
@@ -117,19 +117,19 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	editor_terminal_stack.style.width = api.sizing_grow() // Grows to fill remaining width
-	editor_terminal_stack.style.height = api.sizing_grow() // Grows to fill height
-	editor_terminal_stack.style.color = {0.1, 0.1, 0.1, 1.0}
-	editor_terminal_stack.style.layout_dir = .TopDown // Vertical: editor on top, terminal below
-	api.add_child(horizontal_stack, editor_terminal_stack)
+	api.node_set_width(ctx, editor_terminal_stack, api.sizing_grow()) // Grows to fill remaining width
+	api.node_set_height(ctx, editor_terminal_stack, api.sizing_grow()) // Grows to fill height
+	api.node_set_color(ctx, editor_terminal_stack, {0.1, 0.1, 0.1, 1.0})
+	api.node_set_layout_dir(ctx, editor_terminal_stack, .TopDown) // Vertical: editor on top, terminal below
+	api.add_child(ctx, horizontal_stack, editor_terminal_stack)
 
 	// Editor area container - grows to fill available space above terminal
 	editor_main := api.create_node(api.ElementID("editor_main"), .Container, ctx.allocator)
-	editor_main.style.width = api.SIZE_FULL // Full width of stack
-	editor_main.style.height = api.sizing_grow() // Grows to fill remaining height
-	editor_main.style.color = {0.12, 0.12, 0.12, 1.0} // Slightly lighter dark
-	editor_main.style.layout_dir = .TopDown
-	api.add_child(editor_terminal_stack, editor_main)
+	api.node_set_width(ctx, editor_main, api.SIZE_FULL) // Full width of stack
+	api.node_set_height(ctx, editor_main, api.sizing_grow()) // Grows to fill remaining height
+	api.node_set_color(ctx, editor_main, {0.12, 0.12, 0.12, 1.0}) // Slightly lighter dark
+	api.node_set_layout_dir(ctx, editor_main, .TopDown)
+	api.add_child(ctx, editor_terminal_stack, editor_main)
 	state.containers["editor_main"] = editor_main
 
 	// Terminal resize handle - horizontal bar above terminal
@@ -138,11 +138,11 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	terminal_resize_handle.style.width = api.SIZE_FULL
-	terminal_resize_handle.style.height = api.sizing_px(TERMINAL_RESIZE_HANDLE_HEIGHT)
-	terminal_resize_handle.style.color = {0.15, 0.15, 0.15, 1.0}
-	terminal_resize_handle.cursor = .Resize
-	api.add_child(editor_terminal_stack, terminal_resize_handle)
+	api.node_set_width(ctx, terminal_resize_handle, api.SIZE_FULL)
+	api.node_set_height(ctx, terminal_resize_handle, api.sizing_px(TERMINAL_RESIZE_HANDLE_HEIGHT))
+	api.node_set_color(ctx, terminal_resize_handle, {0.15, 0.15, 0.15, 1.0})
+	api.node_set_cursor(ctx, terminal_resize_handle, .Resize)
+	api.add_child(ctx, editor_terminal_stack, terminal_resize_handle)
 	state.terminal_resize_handle = terminal_resize_handle
 
 	// Terminal container - fixed height at bottom
@@ -151,30 +151,30 @@ vscode_default_init :: proc(ctx: ^api.PluginContext) -> bool {
 		.Container,
 		ctx.allocator,
 	)
-	terminal_container.style.width = api.SIZE_FULL
-	terminal_container.style.height = api.sizing_px(TERMINAL_DEFAULT_HEIGHT)
-	terminal_container.style.color = {0.1, 0.1, 0.1, 1.0}
-	terminal_container.style.layout_dir = .TopDown
-	api.add_child(editor_terminal_stack, terminal_container)
+	api.node_set_width(ctx, terminal_container, api.SIZE_FULL)
+	api.node_set_height(ctx, terminal_container, api.sizing_px(TERMINAL_DEFAULT_HEIGHT))
+	api.node_set_color(ctx, terminal_container, {0.1, 0.1, 0.1, 1.0})
+	api.node_set_layout_dir(ctx, terminal_container, .TopDown)
+	api.add_child(ctx, editor_terminal_stack, terminal_container)
 	state.terminal_container = terminal_container
 	state.terminal_height = TERMINAL_DEFAULT_HEIGHT
 
 	// Terminal content area - actual terminal display
 	terminal_bottom := api.create_node(api.ElementID("terminal_bottom"), .Container, ctx.allocator)
-	terminal_bottom.style.width = api.SIZE_FULL
-	terminal_bottom.style.height = api.sizing_grow()
-	terminal_bottom.style.color = {0.08, 0.08, 0.08, 1.0} // Darker background for terminal
-	terminal_bottom.style.layout_dir = .TopDown
-	api.add_child(terminal_container, terminal_bottom)
+	api.node_set_width(ctx, terminal_bottom, api.SIZE_FULL)
+	api.node_set_height(ctx, terminal_bottom, api.sizing_grow())
+	api.node_set_color(ctx, terminal_bottom, {0.08, 0.08, 0.08, 1.0}) // Darker background for terminal
+	api.node_set_layout_dir(ctx, terminal_bottom, .TopDown)
+	api.add_child(ctx, terminal_container, terminal_bottom)
 	state.containers["terminal_bottom"] = terminal_bottom
 
 	// Bottom bar - full width, fixed height
 	status_bar := api.create_node(api.ElementID("status_bar"), .Container, ctx.allocator)
-	status_bar.style.width = api.SIZE_FULL // Full window width
-	status_bar.style.height = api.sizing_px(30) // Fixed 30px height
-	status_bar.style.color = {0.15, 0.15, 0.15, 1.0} // Dark gray
-	status_bar.style.layout_dir = .LeftRight
-	api.add_child(root, status_bar)
+	api.node_set_width(ctx, status_bar, api.SIZE_FULL) // Full window width
+	api.node_set_height(ctx, status_bar, api.sizing_px(30)) // Fixed 30px height
+	api.node_set_color(ctx, status_bar, {0.15, 0.15, 0.15, 1.0}) // Dark gray
+	api.node_set_layout_dir(ctx, status_bar, .LeftRight)
+	api.add_child(ctx, root, status_bar)
 	state.containers["status_bar"] = status_bar
 
 	// Set root node via API - MUST be done before creating high-level components
@@ -283,7 +283,7 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 				// Update state and UI
 				state.sidebar_width = new_width
 				if state.sidebar_node != nil {
-					state.sidebar_node.style.width = api.sizing_px(int(new_width))
+					api.node_set_width(ctx, state.sidebar_node, api.sizing_px(int(new_width)))
 				}
 
 				return true // Consume the event
@@ -308,7 +308,11 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 				// Update state and UI
 				state.terminal_height = new_height
 				if state.terminal_container != nil {
-					state.terminal_container.style.height = api.sizing_px(int(new_height))
+					api.node_set_height(
+						ctx,
+						state.terminal_container,
+						api.sizing_px(int(new_height)),
+					)
 				}
 
 				return true // Consume the event
@@ -396,7 +400,7 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 			if state.sidebar_width > max_width {
 				state.sidebar_width = max_width
 				if state.sidebar_node != nil {
-					state.sidebar_node.style.width = api.sizing_px(int(max_width))
+					api.node_set_width(ctx, state.sidebar_node, api.sizing_px(int(max_width)))
 				}
 			}
 
@@ -408,7 +412,11 @@ vscode_default_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> b
 			if state.terminal_height > max_height {
 				state.terminal_height = max_height
 				if state.terminal_container != nil {
-					state.terminal_container.style.height = api.sizing_px(int(max_height))
+					api.node_set_height(
+						ctx,
+						state.terminal_container,
+						api.sizing_px(int(max_height)),
+					)
 				}
 			}
 		}

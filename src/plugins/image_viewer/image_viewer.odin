@@ -102,21 +102,21 @@ create_image_ui :: proc(state: ^ImageViewerState, path: string, container_id: st
 	// Create a container to hold the image (for centering/padding)
 	container_node_id := api.ElementID(fmt.tprintf("image_container_%s", container_id))
 	container_node := api.create_node(container_node_id, .Container, state.allocator)
-	container_node.style.width = api.SIZE_FULL
-	container_node.style.height = api.sizing_grow()
-	container_node.style.color = {0.1, 0.1, 0.1, 1.0} // Dark background
-	container_node.style.layout_dir = .TopDown
-	container_node.style.padding = {16, 16, 16, 16}
+	api.node_set_width(state.ctx, container_node, api.SIZE_FULL)
+	api.node_set_height(state.ctx, container_node, api.sizing_grow())
+	api.node_set_color(state.ctx, container_node, {0.1, 0.1, 0.1, 1.0}) // Dark background
+	api.node_set_layout_dir(state.ctx, container_node, .TopDown)
+	api.node_set_padding(state.ctx, container_node, {16, 16, 16, 16})
 
 	// Create the image node
 	image_node_id := api.ElementID(fmt.tprintf("image_%s", container_id))
 	image_node := api.create_node(image_node_id, .Image, state.allocator)
-	image_node.style.width = api.SIZE_FULL
-	image_node.style.height = api.sizing_grow()
-	image_node.style.color = {0, 0, 0, 0} // Transparent background
-	image_node.image_path = strings.clone(path, state.allocator)
+	api.node_set_width(state.ctx, image_node, api.SIZE_FULL)
+	api.node_set_height(state.ctx, image_node, api.sizing_grow())
+	api.node_set_color(state.ctx, image_node, {0, 0, 0, 0}) // Transparent background
+	api.node_set_image_path(state.ctx, image_node, strings.clone(path, state.allocator))
 
-	api.add_child(container_node, image_node)
+	api.add_child(state.ctx, container_node, image_node)
 
 	// Attach to the container
 	if !api.attach_to_container(state.ctx, container_id, container_node) {

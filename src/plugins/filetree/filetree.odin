@@ -238,22 +238,28 @@ build_filetree_ui :: proc(
 		// This will contain the text node and (when expanded) the children
 		entry_id := api.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
 		entry_node := api.create_node(entry_id, .Container, state.allocator)
-		entry_node.style.width = api.SIZE_FULL
-		entry_node.style.height = api.sizing_fit() // Auto-size to content
-		entry_node.style.color =
-			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
-		entry_node.style.layout_dir = .TopDown // Vertical layout: text on top, children below
-		entry_node.style.padding = {0, 0, 0, 0} // No padding on entry node itself
+		api.node_set_width(state.ctx, entry_node, api.SIZE_FULL)
+		api.node_set_height(state.ctx, entry_node, api.sizing_fit()) // Auto-size to content
+		api.node_set_color(
+			state.ctx,
+			entry_node,
+			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0},
+		)
+		api.node_set_layout_dir(state.ctx, entry_node, .TopDown) // Vertical layout: text on top, children below
+		api.node_set_padding(state.ctx, entry_node, {0, 0, 0, 0}) // No padding on entry node itself
 
 		// Create a row container for the directory name (for horizontal layout: indentation + text)
 		row_id := api.ElementID(fmt.tprintf("filetree_row_%s", full_path))
 		row_node := api.create_node(row_id, .Container, state.allocator)
-		row_node.style.width = api.SIZE_FULL
-		row_node.style.height = api.sizing_fit()
-		row_node.style.color =
-			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0}
-		row_node.style.layout_dir = .LeftRight // Horizontal: indentation + text
-		row_node.style.padding = {u16(depth * 16), 4, 4, 4} // Indentation left, padding for better click target
+		api.node_set_width(state.ctx, row_node, api.SIZE_FULL)
+		api.node_set_height(state.ctx, row_node, api.sizing_fit())
+		api.node_set_color(
+			state.ctx,
+			row_node,
+			is_failed ? [4]f32{0.3, 0.15, 0.15, 1.0} : [4]f32{0.2, 0.2, 0.2, 1.0},
+		)
+		api.node_set_layout_dir(state.ctx, row_node, .LeftRight) // Horizontal: indentation + text
+		api.node_set_padding(state.ctx, row_node, {u16(depth * 16), 4, 4, 4}) // Indentation left, padding for better click target
 
 		// Set click callback for directory (toggle expansion)
 		// Store full_path in a cloned string for the callback
@@ -286,6 +292,8 @@ build_filetree_ui :: proc(
 			})ctx
 			if callback_ctx == nil || callback_ctx.state == nil || callback_ctx.entry_node == nil do return
 
+			plugin_ctx := callback_ctx.state.ctx
+
 			// Toggle expansion
 			is_expanded := callback_ctx.state.expanded[callback_ctx.path] or_else false
 			new_expanded := !is_expanded
@@ -303,7 +311,7 @@ build_filetree_ui :: proc(
 
 				// Expand: add children to the entry node
 				// First, clear any existing children except the row_node (first child, contains text)
-				api.clear_children_except(callback_ctx.entry_node, 1)
+				api.clear_children_except(plugin_ctx, callback_ctx.entry_node, 1)
 
 				// Then add directory contents (these will appear below the row_node)
 				start := time.tick_now()
@@ -320,61 +328,75 @@ build_filetree_ui :: proc(
 					// Don't mark as expanded if it failed
 					callback_ctx.state.expanded[callback_ctx.path] = false
 					// Update colors to red to indicate failure
-					callback_ctx.entry_node.style.color = {0.3, 0.15, 0.15, 1.0}
+					api.node_set_color(plugin_ctx, callback_ctx.entry_node, {0.3, 0.15, 0.15, 1.0})
 					if callback_ctx.row_node != nil {
-						callback_ctx.row_node.style.color = {0.3, 0.15, 0.15, 1.0}
+						api.node_set_color(
+							plugin_ctx,
+							callback_ctx.row_node,
+							{0.3, 0.15, 0.15, 1.0},
+						)
 					}
 					if callback_ctx.text_node != nil {
-						callback_ctx.text_node.style.color = {0.9, 0.3, 0.3, 1.0} // Red text
+						api.node_set_color(
+							plugin_ctx,
+							callback_ctx.text_node,
+							{0.9, 0.3, 0.3, 1.0},
+						) // Red text
 					}
 				} else {
 					// Success - mark as expanded and reset colors
 					callback_ctx.state.expanded[callback_ctx.path] = true
-					callback_ctx.entry_node.style.color = {0.2, 0.2, 0.2, 1.0}
+					api.node_set_color(plugin_ctx, callback_ctx.entry_node, {0.2, 0.2, 0.2, 1.0})
 					if callback_ctx.row_node != nil {
-						callback_ctx.row_node.style.color = {0.2, 0.2, 0.2, 1.0}
+						api.node_set_color(plugin_ctx, callback_ctx.row_node, {0.2, 0.2, 0.2, 1.0})
 					}
 					if callback_ctx.text_node != nil {
-						callback_ctx.text_node.style.color = {0.8, 0.8, 0.8, 1.0} // Normal text
+						api.node_set_color(
+							plugin_ctx,
+							callback_ctx.text_node,
+							{0.8, 0.8, 0.8, 1.0},
+						) // Normal text
 					}
 				}
 			} else {
 				// Collapse: clear expanded state for this directory AND all subdirectories
 				clear_expanded_recursive(callback_ctx.state, callback_ctx.path)
 				// Remove all children except the row_node (first child, contains text)
-				api.clear_children_except(callback_ctx.entry_node, 1)
+				api.clear_children_except(plugin_ctx, callback_ctx.entry_node, 1)
 			}
 		}
 
 		// Set callback on row node (the clickable area)
-		row_node.on_click = click_callback
-		row_node.callback_ctx = dir_callback_ctx
-		row_node.cursor = .Hand // Set hand cursor for clickable directory items
+		api.node_set_on_click(state.ctx, row_node, click_callback, dir_callback_ctx)
+		api.node_set_cursor(state.ctx, row_node, .Hand) // Set hand cursor for clickable directory items
 
 		// Create text node for directory name
 		text_id := api.ElementID(fmt.tprintf("filetree_text_%s", full_path))
 		text_node := api.create_node(text_id, .Text, state.allocator)
-		text_node.style.width = api.sizing_grow()
-		text_node.style.height = api.sizing_fit() // Auto-size to text content
-		text_node.style.padding = {0, 0, 0, 0} // No padding on text node itself
-		text_node.text_content = strings.clone(entry.name, state.allocator)
+		api.node_set_width(state.ctx, text_node, api.sizing_grow())
+		api.node_set_height(state.ctx, text_node, api.sizing_fit()) // Auto-size to text content
+		api.node_set_padding(state.ctx, text_node, {0, 0, 0, 0}) // No padding on text node itself
+		api.node_set_text(state.ctx, text_node, strings.clone(entry.name, state.allocator))
 		// Use red text for failed directories, normal for others
-		text_node.style.color = is_failed ? [4]f32{0.9, 0.3, 0.3, 1.0} : [4]f32{0.8, 0.8, 0.8, 1.0}
+		api.node_set_color(
+			state.ctx,
+			text_node,
+			is_failed ? [4]f32{0.9, 0.3, 0.3, 1.0} : [4]f32{0.8, 0.8, 0.8, 1.0},
+		)
 
 		// Store text_node and row_node references in callback context
 		dir_callback_ctx.text_node = text_node
 		dir_callback_ctx.row_node = row_node
 
 		// Set click callback on text node so clicking directly on text works
-		text_node.on_click = click_callback
-		text_node.callback_ctx = dir_callback_ctx
-		text_node.cursor = .Hand // Set hand cursor for clickable directory text
+		api.node_set_on_click(state.ctx, text_node, click_callback, dir_callback_ctx)
+		api.node_set_cursor(state.ctx, text_node, .Hand) // Set hand cursor for clickable directory text
 
 		// Build hierarchy: entry_node -> row_node -> text_node
 		// When expanded, children will be added directly to entry_node (below row_node)
-		api.add_child(row_node, text_node)
-		api.add_child(entry_node, row_node)
-		api.add_child(parent_node, entry_node)
+		api.add_child(state.ctx, row_node, text_node)
+		api.add_child(state.ctx, entry_node, row_node)
+		api.add_child(state.ctx, parent_node, entry_node)
 
 		// If expanded, recursively add children (pass start_time for timeout tracking)
 		if state.expanded[full_path] or_else false {
@@ -391,11 +413,11 @@ build_filetree_ui :: proc(
 		// Files are simpler - just a row with indentation + text
 		entry_id := api.ElementID(fmt.tprintf("filetree_entry_%s_%d", full_path, depth))
 		entry_node := api.create_node(entry_id, .Container, state.allocator)
-		entry_node.style.width = api.SIZE_FULL
-		entry_node.style.height = api.sizing_fit() // Auto-size to content
-		entry_node.style.color = {0.2, 0.2, 0.2, 1.0} // Default background (will change on hover)
-		entry_node.style.layout_dir = .LeftRight // Horizontal: indentation + text
-		entry_node.style.padding = {u16(depth * 16), 4, 4, 4} // Indentation left, padding for better click target
+		api.node_set_width(state.ctx, entry_node, api.SIZE_FULL)
+		api.node_set_height(state.ctx, entry_node, api.sizing_fit()) // Auto-size to content
+		api.node_set_color(state.ctx, entry_node, {0.2, 0.2, 0.2, 1.0}) // Default background (will change on hover)
+		api.node_set_layout_dir(state.ctx, entry_node, .LeftRight) // Horizontal: indentation + text
+		api.node_set_padding(state.ctx, entry_node, {u16(depth * 16), 4, 4, 4}) // Indentation left, padding for better click target
 
 		// Store file path for click handling
 		file_path_clone := strings.clone(full_path, state.allocator)
@@ -437,50 +459,49 @@ build_filetree_ui :: proc(
 		}
 
 		// Set callback on entry node
-		entry_node.on_click = file_click_callback
-		entry_node.callback_ctx = file_callback_ctx
-		entry_node.cursor = .Hand // Set hand cursor for clickable file items
+		api.node_set_on_click(state.ctx, entry_node, file_click_callback, file_callback_ctx)
+		api.node_set_cursor(state.ctx, entry_node, .Hand) // Set hand cursor for clickable file items
 
 		// Create text node for file name
 		text_id := api.ElementID(fmt.tprintf("filetree_text_%s", full_path))
 		text_node := api.create_node(text_id, .Text, state.allocator)
-		text_node.style.width = api.sizing_grow()
-		text_node.style.height = api.sizing_fit() // Auto-size to text content
-		text_node.style.padding = {0, 0, 0, 0} // No padding on text node itself
-		text_node.text_content = strings.clone(entry.name, state.allocator)
-		text_node.style.color = {0.7, 0.7, 0.9, 1.0} // Slightly blue for files
+		api.node_set_width(state.ctx, text_node, api.sizing_grow())
+		api.node_set_height(state.ctx, text_node, api.sizing_fit()) // Auto-size to text content
+		api.node_set_padding(state.ctx, text_node, {0, 0, 0, 0}) // No padding on text node itself
+		api.node_set_text(state.ctx, text_node, strings.clone(entry.name, state.allocator))
+		api.node_set_color(state.ctx, text_node, {0.7, 0.7, 0.9, 1.0}) // Slightly blue for files
 
 		// Set click callback on text node so clicking directly on text works
-		text_node.on_click = file_click_callback
-		text_node.callback_ctx = file_callback_ctx
-		text_node.cursor = .Hand // Set hand cursor for clickable file text
+		api.node_set_on_click(state.ctx, text_node, file_click_callback, file_callback_ctx)
+		api.node_set_cursor(state.ctx, text_node, .Hand) // Set hand cursor for clickable file text
 
-		api.add_child(entry_node, text_node)
-		api.add_child(parent_node, entry_node)
+		api.add_child(state.ctx, entry_node, text_node)
+		api.add_child(state.ctx, parent_node, entry_node)
 	}
 
 	// Add truncation indicator if entries were limited
 	if was_truncated {
 		truncation_id := api.ElementID(fmt.tprintf("filetree_truncated_%s", dir_path))
 		truncation_node := api.create_node(truncation_id, .Container, state.allocator)
-		truncation_node.style.width = api.SIZE_FULL
-		truncation_node.style.height = api.sizing_fit()
-		truncation_node.style.color = {0.2, 0.2, 0.2, 1.0}
-		truncation_node.style.layout_dir = .LeftRight
-		truncation_node.style.padding = {u16(depth * 16), 4, 4, 4}
+		api.node_set_width(state.ctx, truncation_node, api.SIZE_FULL)
+		api.node_set_height(state.ctx, truncation_node, api.sizing_fit())
+		api.node_set_color(state.ctx, truncation_node, {0.2, 0.2, 0.2, 1.0})
+		api.node_set_layout_dir(state.ctx, truncation_node, .LeftRight)
+		api.node_set_padding(state.ctx, truncation_node, {u16(depth * 16), 4, 4, 4})
 
 		truncation_text_id := api.ElementID(fmt.tprintf("filetree_truncated_text_%s", dir_path))
 		truncation_text := api.create_node(truncation_text_id, .Text, state.allocator)
-		truncation_text.style.width = api.sizing_grow()
-		truncation_text.style.height = api.sizing_fit()
-		truncation_text.text_content = strings.clone(
-			fmt.tprintf("(%d+ more...)", MAX_ENTRIES),
-			state.allocator,
+		api.node_set_width(state.ctx, truncation_text, api.sizing_grow())
+		api.node_set_height(state.ctx, truncation_text, api.sizing_fit())
+		api.node_set_text(
+			state.ctx,
+			truncation_text,
+			strings.clone(fmt.tprintf("(%d+ more...)", MAX_ENTRIES), state.allocator),
 		)
-		truncation_text.style.color = {0.5, 0.5, 0.5, 1.0} // Gray text for indicator
+		api.node_set_color(state.ctx, truncation_text, {0.5, 0.5, 0.5, 1.0}) // Gray text for indicator
 
-		api.add_child(truncation_node, truncation_text)
-		api.add_child(parent_node, truncation_node)
+		api.add_child(state.ctx, truncation_node, truncation_text)
+		api.add_child(state.ctx, parent_node, truncation_node)
 
 		return .Truncated
 	}
@@ -523,7 +544,7 @@ filetree_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 			// Clear and rebuild filetree UI if we have a root node
 			if state.root_node != nil {
 				// Clear all children from the root node
-				api.clear_children_except(state.root_node, 0)
+				api.clear_children_except(ctx, state.root_node, 0)
 
 				// Rebuild the filetree with new root path
 				fmt.printf("[filetree] Rebuilding filetree UI for: %s\n", state.root_path)
@@ -573,13 +594,12 @@ filetree_on_event :: proc(ctx: ^api.PluginContext, event: ^api.Event) -> bool {
 				// Create root container for filetree (scrollable)
 				root_id := api.ElementID("filetree_root")
 				state.root_node = api.create_node(root_id, .Container, ctx.allocator)
-				state.root_node.style.width = api.SIZE_FULL
-				state.root_node.style.height = api.SIZE_FULL
-				state.root_node.style.color = {0.2, 0.2, 0.2, 1.0}
-				state.root_node.style.layout_dir = .TopDown
-				state.root_node.style.padding = {8, 8, 8, 8} // Padding around filetree
-				state.root_node.style.clip_vertical = true // Enable vertical scrolling
-				state.root_node.style.clip_horizontal = false
+				api.node_set_width(ctx, state.root_node, api.SIZE_FULL)
+				api.node_set_height(ctx, state.root_node, api.SIZE_FULL)
+				api.node_set_color(ctx, state.root_node, {0.2, 0.2, 0.2, 1.0})
+				api.node_set_layout_dir(ctx, state.root_node, .TopDown)
+				api.node_set_padding(ctx, state.root_node, {8, 8, 8, 8}) // Padding around filetree
+				api.node_set_clip(ctx, state.root_node, true, false) // Enable vertical scrolling
 
 				// Build the filetree (only top level, don't expand subdirectories by default)
 				fmt.printf("[filetree] Building filetree UI for: %s\n", state.root_path)

@@ -5,7 +5,6 @@ import win "core"
 import core "core"
 import "core:fmt"
 import "core:os"
-import "core:sync"
 import buffer_manager "plugins/buffer_manager"
 import filetree "plugins/filetree"
 import image_viewer "plugins/image_viewer"
@@ -271,8 +270,9 @@ main :: proc() {
 	// Main event loop with Animation Decay architecture
 	// This achieves 60 FPS during interactions and 0% CPU when idle
 	running := true
-	render_required := true // Draw initial frame
-	render_required_mutex: sync.Mutex // Protect render_required for thread safety
+	// render_at is managed in api_impl.odin via request_render_internal()
+	// Request initial frame render
+	request_render_internal()
 	animation_until := u64(0) // Timestamp in ms when animation should stop
 	last_frame_time := sdl.GetTicks()
 
@@ -287,10 +287,9 @@ main :: proc() {
 	for running {
 		current_time := sdl.GetTicks()
 
-		// 1. Check render_required (thread-safe)
-		sync.mutex_lock(&render_required_mutex)
-		needs_render := render_required
-		sync.mutex_unlock(&render_required_mutex)
+		// 1. Check render_at timestamp (thread-safe via helper)
+		render_at := get_render_at()
+		needs_render := render_at > 0 && current_time >= render_at
 
 		// 2. Determine Sleep Strategy
 		timeout_ms: i32
@@ -301,11 +300,14 @@ main :: proc() {
 			// and let RenderPresent (VSync) handle the pacing.
 			// Using 0 prevents busy-looping if VSync is off.
 			timeout_ms = 0
+		} else if render_at > 0 {
+			// Render scheduled for the future - wait until then
+			wait_time := render_at - current_time
+			timeout_ms = i32(min(wait_time, 100))
 		} else {
 			// We are idle. Use a small timeout (100ms) to periodically check
-			// render_required flag set by background threads.
+			// render_at set by background threads.
 			// This uses minimal CPU (~0.1%) but allows thread-triggered updates.
-			// Alternative: Use a pipe/socket for zero-CPU wake-up (more complex).
 			timeout_ms = 100
 		}
 
@@ -315,11 +317,11 @@ main :: proc() {
 		// If timeout is 0, this returns immediately.
 		event_received := sdl.WaitEventTimeout(&event, timeout_ms)
 
-		// 4. Re-check render_required after WaitEvent (thread might have set it)
+		// 4. Re-check render_at after WaitEvent (thread might have set it)
 		// This ensures we wake up even if no SDL event occurred
-		sync.mutex_lock(&render_required_mutex)
-		needs_render = render_required
-		sync.mutex_unlock(&render_required_mutex)
+		current_time = sdl.GetTicks()
+		render_at = get_render_at()
+		needs_render = render_at > 0 && current_time >= render_at
 
 		if event_received {
 			// Convert SDL events to internal events and emit
@@ -349,11 +351,8 @@ main :: proc() {
 				// to allow scroll damping/inertia to settle.
 				animation_until = sdl.GetTicks() + 500
 
-				// Request immediate render for scroll feedback
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+				// Scroll events need immediate feedback - request render
+				request_render_internal()
 
 			case .MOUSE_MOTION:
 				// Update mouse position
@@ -387,13 +386,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_move_event)
 				}
 
-				// Mouse movement: Request immediate frame update
-				// For simple UI, we just request 1 frame.
-				// If you want smooth hover effects, extend animation_until instead.
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+			// Mouse movement may trigger hover state changes via event handlers
+			// Those handlers will call request_render if UI changes are made
 
 			case .MOUSE_BUTTON_DOWN:
 				// Update mouse position and button state
@@ -429,11 +423,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_down_event)
 				}
 
-				// Request immediate render
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+			// Mouse events may trigger UI changes via event handlers
+			// Those handlers will call request_render if UI changes are made
 
 			case .MOUSE_BUTTON_UP:
 				// Update mouse position and button state
@@ -464,11 +455,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, mouse_up_event)
 				}
 
-				// Request immediate render
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+			// Mouse events may trigger UI changes via event handlers
+			// Those handlers will call request_render if UI changes are made
 
 			case .TEXT_INPUT:
 				// Emit Text_Input event
@@ -486,11 +474,7 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, text_input_event)
 				}
 
-				// Immediate feedback for text input
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+			// Text input event handlers will call request_render if UI changes are made
 
 			case .KEY_DOWN:
 				// Check for keyboard shortcuts
@@ -568,11 +552,8 @@ main :: proc() {
 					}
 				}
 
-				// Request immediate render for text input feedback
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+			// Key events may trigger UI changes via event handlers
+			// Those handlers will call request_render if UI changes are made
 
 			case .WINDOW_RESIZED:
 				// Window was resized - update window context and renderer
@@ -591,11 +572,8 @@ main :: proc() {
 					core.dispatch_event_to_plugins(plugin_registry, resize_event)
 				}
 
-				// Request immediate render to show new size
-				sync.mutex_lock(&render_required_mutex)
-				render_required = true
-				needs_render = true
-				sync.mutex_unlock(&render_required_mutex)
+				// Window resize requires immediate render to show new size
+				request_render_internal()
 			}
 		}
 
@@ -620,17 +598,15 @@ main :: proc() {
 			// Free the folder path string (it was cloned in the callback)
 			delete(folder_path)
 
-			// Request render to show updated UI
-			sync.mutex_lock(&render_required_mutex)
-			render_required = true
-			needs_render = true
-			sync.mutex_unlock(&render_required_mutex)
+			// Event handlers will call request_render if UI changes are made
 		}
 
 		// 5. Check if we should Draw
 		// Re-check time because WaitEvent might have slept
 		current_time = sdl.GetTicks()
-		should_render := needs_render || (current_time < animation_until)
+		render_at = get_render_at()
+		should_render :=
+			(render_at > 0 && current_time >= render_at) || (current_time < animation_until)
 
 		if should_render {
 			// Update Clay pointer state before layout (required for hit testing)
@@ -659,10 +635,8 @@ main :: proc() {
 			// This will block for VSync, capping you at 60/120 FPS cleanly.
 			sdl.RenderPresent(window_ctx.renderer)
 
-			// Clear render_required flag (thread-safe)
-			sync.mutex_lock(&render_required_mutex)
-			render_required = false
-			sync.mutex_unlock(&render_required_mutex)
+			// Clear render_at timestamp (thread-safe)
+			reset_render_at()
 
 			// TODO: Check Clay scroll state if needed
 			// Clay's scroll state can be checked via GetScrollContainerData if needed
