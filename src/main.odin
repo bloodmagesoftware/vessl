@@ -4,6 +4,8 @@ import api "api"
 import win "core"
 import core "core"
 import "core:fmt"
+import "core:os"
+import "core:strings"
 import "core:sync"
 import buffer_manager "plugins/buffer_manager"
 import filetree "plugins/filetree"
@@ -55,6 +57,27 @@ set_cursor_for_type :: proc(window: ^sdl.Window, cursor_type: api.CursorType) {
 }
 
 main :: proc() {
+	// Handle --cwd argument (passed by CLI wrapper on macOS)
+	args := os.args
+	for i := 1; i < len(args); i += 1 {
+		arg := args[i]
+		if strings.has_prefix(arg, "--cwd=") {
+			// --cwd=/path/to/dir format
+			cwd_path := strings.trim_prefix(arg, "--cwd=")
+			if len(cwd_path) > 0 {
+				os.set_current_directory(cwd_path)
+			}
+			break
+		} else if arg == "--cwd" && i + 1 < len(args) {
+			// --cwd /path/to/dir format
+			cwd_path := args[i + 1]
+			if len(cwd_path) > 0 {
+				os.set_current_directory(cwd_path)
+			}
+			break
+		}
+	}
+
 	// Initialize EventBus
 	eventbus := core.init_eventbus()
 	if eventbus == nil {
